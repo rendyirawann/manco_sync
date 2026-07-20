@@ -87,7 +87,7 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::get('/film/{type}/{id}',        [FilmController::class, 'detail'])->name('film.detail')->where('type', 'movie|tv');
 
     // Unified Sanka multi-source categories. Source is chosen via ?source= .
-    $cats = 'anime|donghua|drama|comic';
+    $cats = 'anime|donghua|drama|comic|comic18|novel';
     Route::get('/{category}',              [StreamController::class, 'index'])->name('stream.index')->where('category', $cats);
     Route::get('/{category}/watch/{id}',   [StreamController::class, 'watch'])->name('stream.watch')->where('category', $cats);
     Route::get('/{category}/read/{id}',    [StreamController::class, 'read'])->name('stream.read')->where('category', $cats);

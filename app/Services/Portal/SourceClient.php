@@ -107,14 +107,20 @@ class SourceClient
         $d = $this->unwrap($body);
 
         $images = $d['images'] ?? $d['chapter_images'] ?? $d['pages'] ?? [];
-        if (!$images) { // find first list-of-url-strings anywhere
+        if (!$images) { // find first list of url-ish entries anywhere
             foreach ($d as $v) {
-                if (is_array($v) && array_is_list($v) && isset($v[0]) && is_string($v[0]) && str_starts_with($v[0], 'http')) {
-                    $images = $v;
-                    break;
+                if (is_array($v) && array_is_list($v) && isset($v[0])) {
+                    $probe = is_array($v[0]) ? ($v[0]['url'] ?? $v[0]['src'] ?? $v[0]['image'] ?? $v[0]['link'] ?? '') : $v[0];
+                    if (is_string($probe) && str_starts_with($probe, 'http')) { $images = $v; break; }
                 }
             }
         }
+        // Entries may be plain URL strings OR objects like {url|src|image|link} (e.g. komikindo).
+        $images = array_values(array_filter(array_map(function ($x) {
+            if (is_string($x)) return $x;
+            if (is_array($x)) return $x['url'] ?? $x['src'] ?? $x['image'] ?? $x['link'] ?? $x['file'] ?? null;
+            return null;
+        }, (array) $images), fn ($u) => is_string($u) && str_starts_with($u, 'http')));
         $nav  = $d['navigation'] ?? [];
         $prev = $nav['previousChapter'] ?? $nav['prev'] ?? $nav['prev_slug'] ?? null;
         $next = $nav['nextChapter'] ?? $nav['next'] ?? $nav['next_slug'] ?? null;
@@ -124,7 +130,7 @@ class SourceClient
         return [
             'title'      => (string) $this->pick($d, ['chapter_title', 'title', 'chapter'], 'Chapter'),
             'mangaTitle' => (string) $this->pick($d, ['manga_title', 'mangaTitle', 'title'], ''),
-            'images'     => array_values(array_filter((array) $images, 'is_string')),
+            'images'     => $images,
             'prev'       => $prev ? trim(basename(rtrim((string) $prev, '/')), '/') : null,
             'next'       => $next ? trim(basename(rtrim((string) $next, '/')), '/') : null,
         ];
@@ -229,6 +235,9 @@ class SourceClient
         if (isset($body['detail']) && is_array($body['detail'])) {
             return $body['detail'];
         }
+        if (isset($body['details']) && is_array($body['details'])) { // mangakita
+            return $body['details'];
+        }
         return is_array($body) ? $body : [];
     }
 
@@ -275,6 +284,11 @@ class SourceClient
             $eid = $this->pick($e, ['episodeId', 'slug', 'chapterId', 'id'], '');
             if ($eid === '') {
                 continue;
+            }
+            // Mangakita: detail chapter slug is "chapter-1188.384280" but the read
+            // endpoint wants "{mangaSlug}-chapter-1188" (drop the ".postId" suffix).
+            if ($src === 'mangakita' && $id) {
+                $eid = trim((string) $id, '/') . '-' . preg_replace('/\..*$/', '', ltrim((string) $eid, '/'));
             }
             // skip genre-ish rows that slipped in (they have href to /genre)
             if (isset($e['href']) && str_contains((string) $e['href'], '/genre')) {

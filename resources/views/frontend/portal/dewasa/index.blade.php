@@ -9,13 +9,16 @@
         </div>
 
         <div class="portal-hero">
-            <p class="portal-kicker">// Nekopoi · 18+</p>
+            <p class="portal-kicker">// Nekopoi &amp; Manga · 18+</p>
             <h1 class="portal-title">DEWASA <span class="accent">18+</span></h1>
             <form class="cy-search" action="{{ route('portal.dewasa.index') }}" method="GET">
                 <input type="text" name="q" value="{{ $q }}" placeholder="Cari...">
                 <button type="submit"><i class="fas fa-search"></i></button>
             </form>
-            <div style="margin-top:.8rem"><a class="cy-btn cy-btn-ghost" href="{{ route('portal.dewasa.random') }}"><i class="fas fa-shuffle"></i> Random</a></div>
+            <div style="margin-top:.8rem;display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center">
+                <a class="cy-btn cy-btn-ghost" href="{{ route('portal.dewasa.random') }}"><i class="fas fa-shuffle"></i> Random</a>
+                <a class="cy-btn" href="{{ route('portal.stream.index', 'comic18') }}"><i class="fas fa-book"></i> Komik 18+ (Mangasusuku)</a>
+            </div>
         </div>
 
         <div class="cy-section">

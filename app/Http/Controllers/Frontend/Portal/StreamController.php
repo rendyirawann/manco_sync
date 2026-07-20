@@ -26,9 +26,18 @@ class StreamController extends Controller
         return [$cat, $src];
     }
 
+    /** Adult categories (config `adult => true`) require the shared age-gate. */
+    protected function adultBlocked(array $cat, Request $r): bool
+    {
+        return !empty($cat['adult']) && $r->session()->get('adult_ok') !== true;
+    }
+
     public function index(string $category, Request $r)
     {
         [$cat, $src] = $this->resolve($category, $r);
+        if ($this->adultBlocked($cat, $r)) {
+            return view('frontend.portal.dewasa.gate');
+        }
         $srcConf = $this->client->source($category, $src);
         $q    = trim((string) $r->query('q', ''));
         $page = max(1, (int) $r->query('page', 1));
@@ -53,6 +62,9 @@ class StreamController extends Controller
     public function detail(string $category, string $id, Request $r)
     {
         [$cat, $src] = $this->resolve($category, $r);
+        if ($this->adultBlocked($cat, $r)) {
+            return view('frontend.portal.dewasa.gate');
+        }
         $data = $this->client->detail($category, $src, $id);
         abort_if(!$data, 404, 'Konten tidak ditemukan.');
         return view('frontend.portal.stream.detail', compact('category', 'cat', 'src', 'data', 'id'));
@@ -69,6 +81,9 @@ class StreamController extends Controller
     public function read(string $category, string $id, Request $r)
     {
         [$cat, $src] = $this->resolve($category, $r);
+        if ($this->adultBlocked($cat, $r)) {
+            return view('frontend.portal.dewasa.gate');
+        }
         $ch = $this->client->chapter($category, $src, $id);
         abort_if(!$ch, 404, 'Chapter tidak ditemukan.');
         return view('frontend.portal.stream.read', compact('category', 'cat', 'src', 'ch', 'id'));

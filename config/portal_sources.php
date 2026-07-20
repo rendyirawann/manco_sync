@@ -112,31 +112,37 @@ return [
 
     'comic' => [
         'label' => 'Manga & Manhwa', 'icon' => 'fa-book-open', 'kind' => 'read',
+        // Sanka restructured comic into per-source namespaces; only sources whose
+        // full read chain (list -> detail -> chapter IMAGES) verified live are kept.
+        // Dropped: komikstation/main/westmanga/bacakomik (dead namespaces),
+        // maid (chapter returns lazy-load placeholder data-URIs, blank pages),
+        // meganei (batch-PDF only, no chapter endpoint),
+        // softkomik (chapter needs 2 path params + backend outage). Verified 2026-07-20.
         'sources' => [
-            'main' => [
-                'label' => 'MancoMix', 'icon' => 'fa-book-open',
-                'lists' => ['Terbaru' => '/comic/terbaru?page={p}', 'Pustaka' => '/comic/pustaka/{p}', 'Populer' => '/comic/populer', 'Trending' => '/comic/trending'],
-                'search' => '/comic/search?q={q}', 'detail' => '/comic/comic/{id}', 'chapter' => '/comic/chapter/{id}',
+            'komikindo' => [
+                'label' => 'Komikindo', 'icon' => 'fa-book-open',
+                'lists' => ['Terbaru' => '/comic/komikindo/latest/{p}', 'Pustaka' => '/comic/komikindo/library/{p}'],
+                'search' => '/comic/komikindo/search/{q}/1', 'detail' => '/comic/komikindo/detail/{id}', 'chapter' => '/comic/komikindo/chapter/{id}',
             ],
-            'westmanga' => [
-                'label' => 'Westmanga', 'icon' => 'fa-dragon',
-                'lists' => ['Latest' => '/comic/westmanga/latest', 'Popular' => '/comic/westmanga/popular', 'Ongoing' => '/comic/westmanga/ongoing'],
-                'search' => '/comic/westmanga/search?q={q}', 'detail' => '/comic/westmanga/detail/{id}', 'chapter' => '/comic/westmanga/chapter/{id}',
+            'mangakita' => [
+                'label' => 'Mangakita', 'icon' => 'fa-book',
+                'lists' => ['Terbaru' => '/comic/mangakita/projects/{p}', 'Semua Manga' => '/comic/mangakita/daftar-manga/{p}'],
+                'search' => '/comic/mangakita/search/{q}/1', 'detail' => '/comic/mangakita/detail/{id}', 'chapter' => '/comic/mangakita/chapter/{id}',
             ],
-            'komikstation' => [
-                'label' => 'Komikstation', 'icon' => 'fa-star',
-                'lists' => ['Home' => '/comic/komikstation/home', 'Populer' => '/comic/komikstation/popular?page={p}', 'Ongoing' => '/comic/komikstation/ongoing?page={p}'],
-                'search' => '/comic/komikstation/search/{q}/1', 'detail' => '/comic/komikstation/manga/{id}', 'chapter' => '/comic/komikstation/chapter/{id}',
-            ],
-            'bacakomik' => [
-                'label' => 'BacaKomik', 'icon' => 'fa-book',
-                'lists' => ['Latest' => '/comic/bacakomik/latest', 'Populer' => '/comic/bacakomik/populer', 'Top' => '/comic/bacakomik/top'],
-                'search' => '/comic/bacakomik/search/{q}', 'detail' => '/comic/bacakomik/detail/{id}', 'chapter' => '/comic/bacakomik/chapter/{id}',
-            ],
-            'softkomik' => [
-                'label' => 'Softkomik', 'icon' => 'fa-feather',
-                'lists' => ['Update' => '/comic/softkomik/update', 'Ongoing' => '/comic/softkomik/ongoing', 'Completed' => '/comic/softkomik/completed'],
-                'search' => '/comic/softkomik/search?q={q}', 'detail' => '/comic/softkomik/detail/{id}', 'chapter' => '/comic/softkomik/chapter/{id}',
+        ],
+    ],
+
+    // 18+ manga — age-gated: StreamController blocks unless session('adult_ok').
+    // Reached from the 18+ area (/portal/dewasa), NOT the main beranda nav.
+    'comic18' => [
+        'label' => 'Manga 18+', 'icon' => 'fa-fire', 'kind' => 'read', 'adult' => true,
+        'sources' => [
+            'mangasusuku' => [
+                'label' => 'Mangasusuku', 'icon' => 'fa-fire',
+                // Only /list/{p} carries item slugs; /latest & /popular items have no
+                // slug/href so their cards can't navigate to detail — so use /list only.
+                'lists' => ['Semua' => '/comic/mangasusuku/list/{p}'],
+                'search' => '/comic/mangasusuku/search/{q}/1', 'detail' => '/comic/mangasusuku/detail/{id}', 'chapter' => '/comic/mangasusuku/chapter/{id}',
             ],
         ],
     ],

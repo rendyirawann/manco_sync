@@ -26,7 +26,7 @@ class PortalController extends Controller
         foreach ([
             ['anime',   'otakudesu', '/anime/ongoing-anime',     'Anime Ongoing',   'fa-tv'],
             ['donghua', 'anichin',   '/anime/donghua/ongoing/1', 'Donghua Terbaru', 'fa-dragon'],
-            ['comic',   'main',      '/comic/terbaru?page=1',    'Komik Terbaru',   'fa-book-open'],
+            ['comic',   'komikindo', '/comic/komikindo/latest/1', 'Komik Terbaru',   'fa-book-open'],
         ] as [$cat, $src, $path, $label, $icon]) {
             $items = $this->client->list($cat, $src, $path);
             if (!$items) {
