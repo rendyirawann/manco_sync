@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # Relational Database: PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: manco-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: manco_sync
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: in12345
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - manco-network
+
+  # NoSQL Database: MongoDB
+  mongodb:
+    image: mongo:latest
+    container_name: manco-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - manco-network
+
+  # In-memory Caching: Redis
+  redis:
+    image: redis:alpine
+    container_name: manco-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - manco-network
+
+  # Rust REST API & Sync Engine Backend
+  rust-backend:
+    build:
+      context: ./manco-rust
+      dockerfile: Dockerfile
+    container_name: manco-rust-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://postgres:in12345@postgres:5432/manco_sync
+      - MONGODB_URI=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - PORT=8000
+    volumes:
+      - ./manco-rust:/app
+    depends_on:
+      - postgres
+      - mongodb
+      - redis
+    networks:
+      - manco-network
+
+volumes:
+  postgres_data:
+    driver: local
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  manco-network:
+    driver: bridge
