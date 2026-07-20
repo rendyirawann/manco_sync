@@ -27,6 +27,7 @@ class PortalController extends Controller
             ['anime',   'otakudesu', '/anime/ongoing-anime',     'Anime Ongoing',   'fa-tv'],
             ['donghua', 'anichin',   '/anime/donghua/ongoing/1', 'Donghua Terbaru', 'fa-dragon'],
             ['comic',   'komikindo', '/comic/komikindo/latest/1', 'Komik Terbaru',   'fa-book-open'],
+            ['novel',   'sakuranovel', '/novel/sakuranovel/home?page=1', 'Novel Terbaru', 'fa-feather-pointed'],
         ] as [$cat, $src, $path, $label, $icon]) {
             $items = $this->client->list($cat, $src, $path);
             if (!$items) {
@@ -59,6 +60,7 @@ class PortalController extends Controller
             ['label' => 'Anime',           'icon' => 'fa-tv',          'url' => route('portal.stream.index', 'anime')],
             ['label' => 'Donghua',         'icon' => 'fa-dragon',      'url' => route('portal.stream.index', 'donghua')],
             ['label' => 'Manga & Manhwa',  'icon' => 'fa-book-open',   'url' => route('portal.stream.index', 'comic')],
+            ['label' => 'Novel',           'icon' => 'fa-feather-pointed', 'url' => route('portal.stream.index', 'novel')],
             ['label' => 'Drama',           'icon' => 'fa-clapperboard','url' => route('portal.stream.index', 'drama')],
             ['label' => 'Film & Movie',    'icon' => 'fa-film',        'url' => route('portal.film.index')],
             ['label' => 'Live TV',         'icon' => 'fa-tower-broadcast', 'url' => route('portal.tv.index')],

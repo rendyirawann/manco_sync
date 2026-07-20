@@ -112,15 +112,32 @@ return [
 
     'comic' => [
         'label' => 'Manga & Manhwa', 'icon' => 'fa-book-open', 'kind' => 'read',
-        // Sanka restructured comic into per-source namespaces; only sources whose
-        // full read chain (list -> detail -> chapter IMAGES) verified live are kept.
-        // Dropped: komikstation/main/westmanga/bacakomik (dead namespaces),
-        // maid (chapter returns lazy-load placeholder data-URIs, blank pages),
-        // meganei (batch-PDF only, no chapter endpoint),
-        // softkomik (chapter needs 2 path params + backend outage). Verified 2026-07-20.
+        // ONLY KomikStation removed (user request); originals kept. Extra sources added
+        // (komikindo/mangakita/shinigami verified reading; kiryuu/maid/meganei have
+        // upstream limits — see docs & the shinigami separate-chapters handling).
         'sources' => [
+            'main' => [
+                'label' => 'MancoMix', 'icon' => 'fa-book-open',
+                'lists' => ['Terbaru' => '/comic/terbaru?page={p}', 'Pustaka' => '/comic/pustaka/{p}', 'Populer' => '/comic/populer', 'Trending' => '/comic/trending'],
+                'search' => '/comic/search?q={q}', 'detail' => '/comic/comic/{id}', 'chapter' => '/comic/chapter/{id}',
+            ],
+            'westmanga' => [
+                'label' => 'Westmanga', 'icon' => 'fa-dragon',
+                'lists' => ['Latest' => '/comic/westmanga/latest', 'Popular' => '/comic/westmanga/popular', 'Ongoing' => '/comic/westmanga/ongoing'],
+                'search' => '/comic/westmanga/search?q={q}', 'detail' => '/comic/westmanga/detail/{id}', 'chapter' => '/comic/westmanga/chapter/{id}',
+            ],
+            'bacakomik' => [
+                'label' => 'BacaKomik', 'icon' => 'fa-book',
+                'lists' => ['Latest' => '/comic/bacakomik/latest', 'Populer' => '/comic/bacakomik/populer', 'Top' => '/comic/bacakomik/top'],
+                'search' => '/comic/bacakomik/search/{q}', 'detail' => '/comic/bacakomik/detail/{id}', 'chapter' => '/comic/bacakomik/chapter/{id}',
+            ],
+            'softkomik' => [
+                'label' => 'Softkomik', 'icon' => 'fa-feather',
+                'lists' => ['Update' => '/comic/softkomik/update', 'Ongoing' => '/comic/softkomik/ongoing', 'Completed' => '/comic/softkomik/completed'],
+                'search' => '/comic/softkomik/search?q={q}', 'detail' => '/comic/softkomik/detail/{id}', 'chapter' => '/comic/softkomik/chapter/{id}',
+            ],
             'komikindo' => [
-                'label' => 'Komikindo', 'icon' => 'fa-book-open',
+                'label' => 'Komikindo', 'icon' => 'fa-star',
                 'lists' => ['Terbaru' => '/comic/komikindo/latest/{p}', 'Pustaka' => '/comic/komikindo/library/{p}'],
                 'search' => '/comic/komikindo/search/{q}/1', 'detail' => '/comic/komikindo/detail/{id}', 'chapter' => '/comic/komikindo/chapter/{id}',
             ],
@@ -128,6 +145,29 @@ return [
                 'label' => 'Mangakita', 'icon' => 'fa-book',
                 'lists' => ['Terbaru' => '/comic/mangakita/projects/{p}', 'Semua Manga' => '/comic/mangakita/daftar-manga/{p}'],
                 'search' => '/comic/mangakita/search/{q}/1', 'detail' => '/comic/mangakita/detail/{id}', 'chapter' => '/comic/mangakita/chapter/{id}',
+            ],
+            'shinigami' => [
+                'label' => 'Shinigami', 'icon' => 'fa-skull',
+                'lists' => ['Terbaru' => '/comic/shinigami/latest?page={p}', 'Populer' => '/comic/shinigami/popular?page={p}', 'Rekomendasi' => '/comic/shinigami/recommended?page={p}'],
+                'search' => '/comic/shinigami/search/{q}', 'detail' => '/comic/shinigami/detail/{id}',
+                // chapters live in a SEPARATE endpoint (detail has none); SourceClient merges it.
+                'chapters' => '/comic/shinigami/chapters/{id}', 'chapter' => '/comic/shinigami/read/{id}',
+            ],
+            'kiryuu' => [
+                'label' => 'Kiryuu', 'icon' => 'fa-bolt',
+                'lists' => ['Trending' => '/comic/kiryuu/home', 'Mingguan' => '/comic/kiryuu/top-weekly', 'Terbaru' => '/comic/kiryuu/latest', 'Populer' => '/comic/kiryuu/popular'],
+                'search' => '/comic/kiryuu/search/{q}/1', 'detail' => '/comic/kiryuu/manga/{id}', 'chapter' => '/comic/kiryuu/chapter/{id}',
+            ],
+            'maid' => [
+                'label' => 'Maid', 'icon' => 'fa-broom',
+                'lists' => ['Terbaru' => '/comic/maid/latest?page={p}'],
+                'search' => '/comic/maid/search?q={q}', 'detail' => '/comic/maid/manga/{id}', 'chapter' => '/comic/maid/chapter/{id}',
+            ],
+            'meganei' => [
+                'label' => 'Meganei (Batch)', 'icon' => 'fa-file-zipper',
+                'lists' => ['Home' => '/comic/meganei/home/{p}', 'List' => '/comic/meganei/list?page={p}'],
+                // batch-PDF only, no per-chapter read endpoint → browse/detail only.
+                'search' => '/comic/meganei/search/{q}', 'detail' => '/comic/meganei/info/{id}',
             ],
         ],
     ],
@@ -143,6 +183,20 @@ return [
                 // slug/href so their cards can't navigate to detail — so use /list only.
                 'lists' => ['Semua' => '/comic/mangasusuku/list/{p}'],
                 'search' => '/comic/mangasusuku/search/{q}/1', 'detail' => '/comic/mangasusuku/detail/{id}', 'chapter' => '/comic/mangasusuku/chapter/{id}',
+            ],
+        ],
+    ],
+
+    // Novel = TEXT content (kind 'text' → StreamController renders the text reader).
+    // Only SakuraNovel: full flow verified (home/detail/read; chapter text at data.content).
+    // Generic /novel/* is unusable (no read-content endpoint + JSON-rounded 64-bit novelId).
+    'novel' => [
+        'label' => 'Novel', 'icon' => 'fa-feather-pointed', 'kind' => 'text',
+        'sources' => [
+            'sakuranovel' => [
+                'label' => 'SakuraNovel', 'icon' => 'fa-feather-pointed',
+                'lists' => ['Terbaru' => '/novel/sakuranovel/home?page={p}', 'A-Z' => '/novel/sakuranovel/daftar-novel'],
+                'search' => '/novel/sakuranovel/search?q={q}&page=1', 'detail' => '/novel/sakuranovel/detail/{id}', 'chapter' => '/novel/sakuranovel/read/{id}',
             ],
         ],
     ],

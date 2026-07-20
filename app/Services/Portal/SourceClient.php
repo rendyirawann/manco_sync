@@ -80,7 +80,17 @@ class SourceClient
             return null;
         }
         $body = $this->sanka->json($this->tpl($s['detail'], ['id' => trim($id, '/')]), 600);
-        return $body ? $this->normalizeDetail($body, $cat, $src, $id) : null;
+        if (!$body) {
+            return null;
+        }
+        $data = $this->normalizeDetail($body, $cat, $src, $id);
+        // Sources with a SEPARATE chapter-list endpoint (shinigami: detail has no
+        // chapters) — fetch that list and populate the episodes.
+        if (empty($data['episodes']) && !empty($s['chapters'])) {
+            $chBody = $this->sanka->json($this->tpl($s['chapters'], ['id' => trim($id, '/')]), 600);
+            $data['episodes'] = $this->normalizeChapterList($chBody);
+        }
+        return $data;
     }
 
     public function episode(string $cat, string $src, string $id): ?array
@@ -122,10 +132,10 @@ class SourceClient
             return null;
         }, (array) $images), fn ($u) => is_string($u) && str_starts_with($u, 'http')));
         $nav  = $d['navigation'] ?? [];
-        $prev = $nav['previousChapter'] ?? $nav['prev'] ?? $nav['prev_slug'] ?? null;
-        $next = $nav['nextChapter'] ?? $nav['next'] ?? $nav['next_slug'] ?? null;
-        if (is_array($prev)) { $prev = $prev['slug'] ?? $prev['link'] ?? null; }
-        if (is_array($next)) { $next = $next['slug'] ?? $next['link'] ?? null; }
+        $prev = $nav['previousChapter'] ?? $nav['prev'] ?? $nav['prev_slug'] ?? $d['prev_chapter'] ?? $d['prevChapter'] ?? null;
+        $next = $nav['nextChapter'] ?? $nav['next'] ?? $nav['next_slug'] ?? $d['next_chapter'] ?? $d['nextChapter'] ?? null;
+        if (is_array($prev)) { $prev = $prev['chapter_id'] ?? $prev['slug'] ?? $prev['link'] ?? null; }
+        if (is_array($next)) { $next = $next['chapter_id'] ?? $next['slug'] ?? $next['link'] ?? null; }
 
         return [
             'title'      => (string) $this->pick($d, ['chapter_title', 'title', 'chapter'], 'Chapter'),
@@ -133,6 +143,42 @@ class SourceClient
             'images'     => $images,
             'prev'       => $prev ? trim(basename(rtrim((string) $prev, '/')), '/') : null,
             'next'       => $next ? trim(basename(rtrim((string) $next, '/')), '/') : null,
+        ];
+    }
+
+    /**
+     * Novel 'text' kind: fetch a chapter -> {title, novelTitle, paragraphs[], prev, next}.
+     * The chapter body is external HTML — we normalize <br>/<p> to breaks then strip ALL
+     * tags (XSS-safe), so the view renders escaped plain text with our own paragraphs.
+     */
+    public function chapterText(string $cat, string $src, string $id): ?array
+    {
+        $s = $this->source($cat, $src);
+        if (!$s || empty($s['chapter'])) {
+            return null;
+        }
+        $body = $this->sanka->json($this->tpl($s['chapter'], ['id' => trim($id, '/')]), 600);
+        if (!$body) {
+            return null;
+        }
+        $d = $this->unwrap($body);
+
+        $raw = (string) $this->pick($d, ['content', 'text', 'chapter_content', 'isi', 'body'], '');
+        $raw = preg_replace('/<\s*br\s*\/?\s*>/i', "\n", $raw);
+        $raw = preg_replace('#</\s*p\s*>#i', "\n\n", $raw);
+        $plain = html_entity_decode(strip_tags((string) $raw), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $paragraphs = array_values(array_filter(array_map('trim', preg_split('/\n{2,}/', $plain)), fn ($p) => $p !== ''));
+
+        $nav  = $d['navigation'] ?? [];
+        $prev = $nav['prev_slug'] ?? $nav['prev'] ?? null;
+        $next = $nav['next_slug'] ?? $nav['next'] ?? null;
+
+        return [
+            'title'      => (string) $this->pick($d, ['title', 'chapter_title', 'chapter'], 'Bab'),
+            'novelTitle' => (string) $this->pick($d, ['novel_title', 'parent_title', 'mangaTitle', 'novel'], ''),
+            'paragraphs' => $paragraphs,
+            'prev'       => $prev ? trim((string) $prev, '/') : null,
+            'next'       => $next ? trim((string) $next, '/') : null,
         ];
     }
 
@@ -189,7 +235,8 @@ class SourceClient
 
     protected function idOf(array $item): ?string
     {
-        $id = $this->pick($item, ['animeId', 'slug', 'bookId', 'id', 'episodeId', 'chapterId', 'seriesId', 'postId', 'contentId'], '');
+        // manga_id first: shinigami keys detail/chapters on its UUID manga_id, NOT its numeric id.
+        $id = $this->pick($item, ['manga_id', 'mangaId', 'animeId', 'slug', 'bookId', 'id', 'episodeId', 'chapterId', 'seriesId', 'postId', 'contentId'], '');
         if ($id === '') {
             // Many sources only expose a link/href like "/manga/{slug}/" — derive the slug.
             $link = $this->pick($item, ['href', 'link', 'url', 'endpoint'], '');
@@ -329,6 +376,55 @@ class SourceClient
             'episodes' => $episodes,
             'id'       => $id,
         ];
+    }
+
+    /** Normalize a SEPARATE chapter-list response (e.g. shinigami) into episodes[]. */
+    protected function normalizeChapterList($body): array
+    {
+        $eps = [];
+        foreach ($this->findChapterArray($body) as $e) {
+            if (!is_array($e)) {
+                continue;
+            }
+            $eid = $this->pick($e, ['chapter_id', 'chapterId', 'id', 'slug', 'episodeId'], '');
+            if ($eid === '') {
+                continue;
+            }
+            $num   = $this->pick($e, ['chapter_number', 'chapter', 'number'], '');
+            $title = $this->pick($e, ['chapter_title', 'title', 'name'], '');
+            $label = $title !== '' ? $title : ($num !== '' ? 'Chapter ' . $num : 'Chapter');
+            $eps[] = [
+                'id'    => trim((string) $eid, '/'),
+                'label' => (string) $label,
+                'date'  => (string) $this->pick($e, ['release_date', 'date', 'updated_at', 'time'], ''),
+            ];
+        }
+        return $eps;
+    }
+
+    /** Recursively find the first array of chapter-like objects. */
+    protected function findChapterArray($node, int $depth = 0): array
+    {
+        if (!is_array($node) || $depth > 5) {
+            return [];
+        }
+        if (array_is_list($node) && isset($node[0]) && is_array($node[0])) {
+            $keys = array_keys($node[0]);
+            foreach (['chapter_id', 'chapterId', 'chapter_number', 'chapter_title'] as $m) {
+                if (in_array($m, $keys, true)) {
+                    return $node;
+                }
+            }
+        }
+        foreach ($node as $v) {
+            if (is_array($v)) {
+                $r = $this->findChapterArray($v, $depth + 1);
+                if ($r) {
+                    return $r;
+                }
+            }
+        }
+        return [];
     }
 
     /** Find any playable url anywhere (embed/mp4/m3u8) as a last resort. */

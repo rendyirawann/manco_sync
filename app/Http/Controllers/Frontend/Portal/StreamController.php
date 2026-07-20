@@ -84,6 +84,12 @@ class StreamController extends Controller
         if ($this->adultBlocked($cat, $r)) {
             return view('frontend.portal.dewasa.gate');
         }
+        // Novels are text: different fetch (chapterText) + a text reader view.
+        if (($cat['kind'] ?? '') === 'text') {
+            $ch = $this->client->chapterText($category, $src, $id);
+            abort_if(!$ch, 404, 'Bab tidak ditemukan.');
+            return view('frontend.portal.stream.novel', compact('category', 'cat', 'src', 'ch', 'id'));
+        }
         $ch = $this->client->chapter($category, $src, $id);
         abort_if(!$ch, 404, 'Chapter tidak ditemukan.');
         return view('frontend.portal.stream.read', compact('category', 'cat', 'src', 'ch', 'id'));

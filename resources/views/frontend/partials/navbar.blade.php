@@ -27,6 +27,7 @@
                     <li><a href="{{ route('portal.stream.index', 'anime') }}"><i class="fas fa-tv"></i> Anime</a></li>
                     <li><a href="{{ route('portal.stream.index', 'donghua') }}"><i class="fas fa-dragon"></i> Donghua</a></li>
                     <li><a href="{{ route('portal.stream.index', 'comic') }}"><i class="fas fa-book-open"></i> Manga &amp; Manhwa</a></li>
+                    <li><a href="{{ route('portal.stream.index', 'novel') }}"><i class="fas fa-feather-pointed"></i> Novel</a></li>
                     <li><a href="{{ route('portal.stream.index', 'drama') }}"><i class="fas fa-clapperboard"></i> Drama</a></li>
                     <li><a href="{{ route('portal.film.index') }}" class="{{ request()->routeIs('portal.film.*') ? 'active' : '' }}"><i class="fas fa-film"></i> Film</a></li>
                     <li><a href="{{ route('portal.tv.index') }}" class="{{ request()->routeIs('portal.tv.*') ? 'active' : '' }}"><i class="fas fa-tower-broadcast"></i> Live TV</a></li>
