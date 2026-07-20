@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Frontend\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Services\Portal\NekopoiClient;
+use App\Services\Portal\SourceClient;
 use Illuminate\Http\Request;
 
 /**
@@ -12,7 +13,7 @@ use Illuminate\Http\Request;
  */
 class NekopoiController extends Controller
 {
-    public function __construct(protected NekopoiClient $neko) {}
+    public function __construct(protected NekopoiClient $neko, protected SourceClient $client) {}
 
     protected function gated(Request $r): bool
     {
@@ -25,8 +26,13 @@ class NekopoiController extends Controller
             return view('frontend.portal.dewasa.gate');
         }
         $q = trim((string) $r->query('q', ''));
-        $items = $q !== '' ? $this->neko->search($q) : $this->neko->latest();
-        return view('frontend.portal.dewasa.index', compact('items', 'q'));
+        // Two clearly separated 18+ sub-sources: Mangasusuku (manga, reliable) +
+        // Nekopoi (anime, flaky). Fetch both so the page is never blank.
+        $manga = $q !== ''
+            ? $this->client->search('comic18', 'mangasusuku', $q)
+            : $this->client->list('comic18', 'mangasusuku', '/comic/mangasusuku/list/1');
+        $neko = $q !== '' ? $this->neko->search($q) : $this->neko->latest();
+        return view('frontend.portal.dewasa.index', compact('manga', 'neko', 'q'));
     }
 
     public function enter(Request $r)
@@ -39,7 +45,10 @@ class NekopoiController extends Controller
     {
         abort_unless($this->gated($r), 403);
         $data = $this->neko->detail((string) $r->query('url', ''));
-        abort_if(!$data, 404, 'Tidak ditemukan.');
+        if (!$data) {
+            return redirect()->route('portal.dewasa.index')
+                ->with('portal_msg', 'Konten tidak ditemukan / sumber Nekopoi sedang down. Coba Komik 18+ (Mangasusuku) yang lebih stabil.');
+        }
         return view('frontend.portal.dewasa.detail', compact('data'));
     }
 
@@ -47,7 +56,11 @@ class NekopoiController extends Controller
     {
         abort_unless($this->gated($r), 403);
         $data = $this->neko->random();
-        abort_if(!$data, 404, 'Sumber sedang kosong.');
+        // Nekopoi domains rotate/get blocked → often empty. Don't 404; guide the user.
+        if (!$data) {
+            return redirect()->route('portal.dewasa.index')
+                ->with('portal_msg', 'Sumber Nekopoi sedang kosong/down (domain sering rotasi). Coba lagi nanti, atau buka Komik 18+ (Mangasusuku).');
+        }
         return view('frontend.portal.dewasa.detail', compact('data'));
     }
 }

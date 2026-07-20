@@ -223,6 +223,9 @@
 .cy-row-head .cy-section-title::after{display:none}
 .cy-seeall{color:var(--cy);font-size:.8rem;white-space:nowrap}
 .cy-seeall:hover{text-shadow:0 0 10px var(--cy-dim)}
+/* 18+ hub: section header (title + see-all) with a source badge */
+.cy-sechead{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.4rem}
+.cy-sechead-src{font-family:'Orbitron',sans-serif;font-size:.6rem;letter-spacing:2px;text-transform:uppercase;color:var(--mg);border:1px solid rgba(255,43,214,.45);padding:.15rem .5rem;border-radius:6px;margin-left:.55rem;vertical-align:middle}
 
 @media(max-width:720px){
     .cy-detail{grid-template-columns:1fr}
