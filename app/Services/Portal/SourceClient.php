@@ -132,18 +132,62 @@ class SourceClient
             return null;
         }, (array) $images), fn ($u) => is_string($u) && str_starts_with($u, 'http')));
         $nav  = $d['navigation'] ?? [];
-        $prev = $nav['previousChapter'] ?? $nav['prev'] ?? $nav['prev_slug'] ?? $d['prev_chapter'] ?? $d['prevChapter'] ?? null;
-        $next = $nav['nextChapter'] ?? $nav['next'] ?? $nav['next_slug'] ?? $d['next_chapter'] ?? $d['nextChapter'] ?? null;
-        if (is_array($prev)) { $prev = $prev['chapter_id'] ?? $prev['slug'] ?? $prev['link'] ?? null; }
-        if (is_array($next)) { $next = $next['chapter_id'] ?? $next['slug'] ?? $next['link'] ?? null; }
+        $prevRaw = $nav['previousChapter'] ?? $nav['prev'] ?? $nav['prev_slug'] ?? $d['prev_chapter'] ?? $d['prevChapter'] ?? null;
+        $nextRaw = $nav['nextChapter'] ?? $nav['next'] ?? $nav['next_slug'] ?? $d['next_chapter'] ?? $d['nextChapter'] ?? null;
+        if (is_array($prevRaw)) { $prevRaw = $prevRaw['chapter_id'] ?? $prevRaw['slug'] ?? $prevRaw['link'] ?? null; }
+        if (is_array($nextRaw)) { $nextRaw = $nextRaw['chapter_id'] ?? $nextRaw['slug'] ?? $nextRaw['link'] ?? null; }
+
+        $clean = fn ($x) => (is_string($x) && $x !== '') ? trim(basename(rtrim($x, '/')), '/') : null;
+        $prev = $clean($prevRaw);
+        $next = $clean($nextRaw);
+
+        // Some sources return BROKEN read-nav (mangasusuku: "#/prev/", "#/next/") or none.
+        // Derive prev/next from the ordered chapter list in the detail — accurate, no
+        // overshoot. No-ops for sources whose chapter id isn't "{manga}-chapter-N".
+        $bad = fn ($raw) => is_string($raw) && str_contains($raw, '#');
+        if ($bad($prevRaw) || $bad($nextRaw) || (!$prev && !$next)) {
+            [$dp, $dn] = $this->deriveChapterNav($cat, $src, $id);
+            if ($dp !== null || $dn !== null) { $prev = $dp; $next = $dn; }
+        }
 
         return [
             'title'      => (string) $this->pick($d, ['chapter_title', 'title', 'chapter'], 'Chapter'),
             'mangaTitle' => (string) $this->pick($d, ['manga_title', 'mangaTitle', 'title'], ''),
             'images'     => $images,
-            'prev'       => $prev ? trim(basename(rtrim((string) $prev, '/')), '/') : null,
-            'next'       => $next ? trim(basename(rtrim((string) $next, '/')), '/') : null,
+            'prev'       => $prev,
+            'next'       => $next,
         ];
+    }
+
+    /**
+     * Derive prev/next chapter ids from the ordered detail chapter list — for sources
+     * whose per-chapter read-nav is broken/missing (mangasusuku returns "#/next/").
+     * Assumes the chapter id encodes "{mangaSlug}-chapter-N" and the list is newest-first.
+     * Returns [prevId|null, nextId|null]; [null,null] if it can't map (safe no-op).
+     */
+    protected function deriveChapterNav(string $cat, string $src, string $id): array
+    {
+        $cur = trim($id, '/');
+        $mangaSlug = preg_replace('/-chapter-.*$/i', '', $cur);
+        if ($mangaSlug === '' || $mangaSlug === $cur) {
+            return [null, null]; // id doesn't look like "{manga}-chapter-N"
+        }
+        $detail = $this->detail($cat, $src, $mangaSlug);
+        $eps = $detail['episodes'] ?? [];
+        if (!$eps) {
+            return [null, null];
+        }
+        $idx = null;
+        foreach ($eps as $i => $e) {
+            if (trim((string) ($e['id'] ?? ''), '/') === $cur) { $idx = $i; break; }
+        }
+        if ($idx === null) {
+            return [null, null];
+        }
+        // List is newest-first (chapter N at a lower index): next = idx-1, prev = idx+1.
+        $next = $idx > 0 ? trim((string) $eps[$idx - 1]['id'], '/') : null;
+        $prev = $idx < count($eps) - 1 ? trim((string) $eps[$idx + 1]['id'], '/') : null;
+        return [$prev, $next];
     }
 
     /**
