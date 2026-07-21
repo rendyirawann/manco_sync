@@ -8,23 +8,16 @@ use App\Services\Portal\SourceClient;
 use Illuminate\Http\Request;
 
 /**
- * 18+ (Nekopoi). Gated behind an age-confirmation stored in session.
- * Source is flaky (often empty) — degrades gracefully.
+ * 18+ hub (Nekopoi anime + Mangasusuku manga). Access is enforced by the
+ * `superadmin` middleware on the routes (must be logged in as Superadmin), so no
+ * per-action auth check is needed here. Nekopoi is flaky → degrades gracefully.
  */
 class NekopoiController extends Controller
 {
     public function __construct(protected NekopoiClient $neko, protected SourceClient $client) {}
 
-    protected function gated(Request $r): bool
-    {
-        return $r->session()->get('adult_ok') === true;
-    }
-
     public function index(Request $r)
     {
-        if (!$this->gated($r)) {
-            return view('frontend.portal.dewasa.gate');
-        }
         $q = trim((string) $r->query('q', ''));
         // Two clearly separated 18+ sub-sources: Mangasusuku (manga, reliable) +
         // Nekopoi (anime, flaky). Fetch both so the page is never blank.
@@ -35,15 +28,8 @@ class NekopoiController extends Controller
         return view('frontend.portal.dewasa.index', compact('manga', 'neko', 'q'));
     }
 
-    public function enter(Request $r)
-    {
-        $r->session()->put('adult_ok', true);
-        return redirect()->route('portal.dewasa.index');
-    }
-
     public function detail(Request $r)
     {
-        abort_unless($this->gated($r), 403);
         $data = $this->neko->detail((string) $r->query('url', ''));
         if (!$data) {
             return redirect()->route('portal.dewasa.index')
@@ -54,7 +40,6 @@ class NekopoiController extends Controller
 
     public function random(Request $r)
     {
-        abort_unless($this->gated($r), 403);
         $data = $this->neko->random();
         // Nekopoi domains rotate/get blocked → often empty. Don't 404; guide the user.
         if (!$data) {

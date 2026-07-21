@@ -13,7 +13,16 @@
                     <span>Manco<em>Sync</em></span>
                 </a>
             </div>
-            <div class="topbar-right"></div>
+            <div class="topbar-right">
+                @auth
+                    <form method="POST" action="{{ route('portal.logout') }}" style="display:inline">
+                        @csrf
+                        <button type="submit" class="topbar-link" style="background:none;border:none;cursor:pointer;font:inherit"><i class="fas fa-right-from-bracket"></i> Keluar</button>
+                    </form>
+                @else
+                    <a href="{{ route('portal.login') }}" class="topbar-link"><i class="fas fa-right-to-bracket"></i> Masuk</a>
+                @endauth
+            </div>
         </div>
 
         {{-- Navigation --}}

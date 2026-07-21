@@ -33,6 +33,7 @@ use App\Http\Controllers\Frontend\Portal\StreamController;
 use App\Http\Controllers\Frontend\Portal\FilmController;
 use App\Http\Controllers\Frontend\Portal\LiveController;
 use App\Http\Controllers\Frontend\Portal\NekopoiController;
+use App\Http\Controllers\Frontend\Portal\PortalAuthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -61,6 +62,14 @@ Route::get('/manga/genre/{slug}/ajax',        [HomeController::class, 'genreAjax
 Route::get('/api/search',                     [HomeController::class, 'search'])->name('frontend.search');
 Route::get('/api/image-proxy',                [HomeController::class, 'imageProxy'])->name('frontend.image-proxy');
 
+// Frontend auth (login untuk gate 18+ Superadmin) — TERPISAH dari /admin/login
+// (yang mengarah ke /admin/dashboard). Login di sini balik ke halaman asal.
+Route::middleware('guest')->group(function () {
+    Route::get('/masuk',  [PortalAuthController::class, 'create'])->name('portal.login');
+    Route::post('/masuk', [PortalAuthController::class, 'store'])->name('portal.login.attempt')->middleware('throttle:6,1');
+});
+Route::post('/keluar', [PortalAuthController::class, 'logout'])->name('portal.logout')->middleware('auth');
+
 // ====================================================
 // MULTI-CONTENT PORTAL (anime / komik / drama) — live-proxied external APIs
 // ====================================================
@@ -75,11 +84,13 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::get('/tv',                      [LiveController::class, 'index'])->name('tv.index');
     Route::get('/tv/watch',                [LiveController::class, 'watch'])->name('tv.watch');
 
-    // 18+ (Nekopoi) — age-gated.
-    Route::get('/dewasa',                  [NekopoiController::class, 'index'])->name('dewasa.index');
-    Route::get('/dewasa/masuk',            [NekopoiController::class, 'enter'])->name('dewasa.enter');
-    Route::get('/dewasa/random',           [NekopoiController::class, 'random'])->name('dewasa.random');
-    Route::get('/dewasa/detail',           [NekopoiController::class, 'detail'])->name('dewasa.detail');
+    // 18+ — WAJIB login Superadmin. Guest → /masuk (balik ke sini setelah login);
+    // sudah login tapi bukan Superadmin → 403. Berlaku juga utk comic18 (dicek di StreamController).
+    Route::middleware('superadmin')->group(function () {
+        Route::get('/dewasa',        [NekopoiController::class, 'index'])->name('dewasa.index');
+        Route::get('/dewasa/random', [NekopoiController::class, 'random'])->name('dewasa.random');
+        Route::get('/dewasa/detail', [NekopoiController::class, 'detail'])->name('dewasa.detail');
+    });
 
     // Film & TV: TMDB metadata + self-hosted TMDB-Embed-API (own controller).
     Route::get('/film',                    [FilmController::class, 'index'])->name('film.index');

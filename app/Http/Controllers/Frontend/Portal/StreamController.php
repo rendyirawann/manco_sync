@@ -26,17 +26,31 @@ class StreamController extends Controller
         return [$cat, $src];
     }
 
-    /** Adult categories (config `adult => true`) require the shared age-gate. */
-    protected function adultBlocked(array $cat, Request $r): bool
+    /**
+     * Adult categories (config `adult => true`) require a logged-in Superadmin.
+     * Returns a redirect/abort response to short-circuit, or null to allow.
+     * Mirrors the `superadmin` middleware (used for the dedicated /dewasa routes)
+     * — needed here because comic18 shares the generic {category} route.
+     */
+    protected function adultGate(array $cat, Request $r)
     {
-        return !empty($cat['adult']) && $r->session()->get('adult_ok') !== true;
+        if (empty($cat['adult'])) {
+            return null;
+        }
+        if (!auth()->check()) {
+            return redirect()->guest(route('portal.login'));
+        }
+        if (!auth()->user()->hasRole(['Superadmin', 'superadmin'])) {
+            abort(403, 'Halaman 18+ khusus Superadmin.');
+        }
+        return null;
     }
 
     public function index(string $category, Request $r)
     {
         [$cat, $src] = $this->resolve($category, $r);
-        if ($this->adultBlocked($cat, $r)) {
-            return view('frontend.portal.dewasa.gate');
+        if ($resp = $this->adultGate($cat, $r)) {
+            return $resp;
         }
         $srcConf = $this->client->source($category, $src);
         $q    = trim((string) $r->query('q', ''));
@@ -62,8 +76,8 @@ class StreamController extends Controller
     public function detail(string $category, string $id, Request $r)
     {
         [$cat, $src] = $this->resolve($category, $r);
-        if ($this->adultBlocked($cat, $r)) {
-            return view('frontend.portal.dewasa.gate');
+        if ($resp = $this->adultGate($cat, $r)) {
+            return $resp;
         }
         $data = $this->client->detail($category, $src, $id);
         abort_if(!$data, 404, 'Konten tidak ditemukan.');
@@ -81,8 +95,8 @@ class StreamController extends Controller
     public function read(string $category, string $id, Request $r)
     {
         [$cat, $src] = $this->resolve($category, $r);
-        if ($this->adultBlocked($cat, $r)) {
-            return view('frontend.portal.dewasa.gate');
+        if ($resp = $this->adultGate($cat, $r)) {
+            return $resp;
         }
         // Novels are text: different fetch (chapterText) + a text reader view.
         if (($cat['kind'] ?? '') === 'text') {

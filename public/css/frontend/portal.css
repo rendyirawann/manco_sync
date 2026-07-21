@@ -226,6 +226,18 @@
 /* 18+ hub: section header (title + see-all) with a source badge */
 .cy-sechead{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.4rem}
 .cy-sechead-src{font-family:'Orbitron',sans-serif;font-size:.6rem;letter-spacing:2px;text-transform:uppercase;color:var(--mg);border:1px solid rgba(255,43,214,.45);padding:.15rem .5rem;border-radius:6px;margin-left:.55rem;vertical-align:middle}
+/* frontend auth (login gate for 18+) */
+.cy-auth{background:var(--portal-panel);border:1px solid var(--portal-line);border-radius:14px;padding:1.8rem 1.6rem;box-shadow:0 0 40px rgba(0,240,255,.1)}
+.cy-auth-note{color:#8fb2c4;font-size:.85rem;line-height:1.6;margin:0 0 1.3rem}
+.cy-authform label{display:block;font-size:.72rem;letter-spacing:1px;text-transform:uppercase;color:var(--cy);margin:.9rem 0 .35rem;font-family:'Orbitron',sans-serif}
+.cy-authform input[type=text],.cy-authform input[type=password]{width:100%;padding:.75rem .9rem;background:rgba(5,4,10,.6);border:1px solid var(--portal-line);border-radius:9px;color:#fff;font-size:.95rem;outline:none;transition:.2s}
+.cy-authform input[type=text]:focus,.cy-authform input[type=password]:focus{border-color:var(--cy);box-shadow:0 0 0 3px rgba(0,240,255,.12)}
+.cy-remember{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:#8fb2c4;text-transform:none;letter-spacing:0;font-family:inherit;margin:.9rem 0 1.2rem}
+.cy-remember input{width:auto}
+.cy-notice-err{border-color:var(--mg)!important;color:#ffd6f2}
+.cy-notice-err i{color:var(--mg)!important}
+.cy-auth-back{display:inline-block;margin-top:1.1rem;color:#8fb2c4;font-size:.82rem}
+.cy-auth-back:hover{color:var(--cy)}
 
 @media(max-width:720px){
     .cy-detail{grid-template-columns:1fr}
