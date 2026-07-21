@@ -183,6 +183,9 @@ return [
                 // slug/href so their cards can't navigate to detail — so use /list only.
                 'lists' => ['Semua' => '/comic/mangasusuku/list/{p}'],
                 'search' => '/comic/mangasusuku/search/{q}/1', 'detail' => '/comic/mangasusuku/detail/{id}', 'chapter' => '/comic/mangasusuku/chapter/{id}',
+                // Posters live on mangasusuku.com which is ISP-blocked (Trust+Positif) in ID —
+                // route them through the server-side image proxy so covers can load.
+                'proxy_poster' => true,
             ],
         ],
     ],

@@ -32,7 +32,7 @@
                     @foreach(array_slice($manga, 0, 18) as $it)
                         @include('frontend.portal.partials.card', [
                             'url'   => route('portal.stream.detail', ['category' => 'comic18', 'id' => $it['id']]) . '?source=mangasusuku',
-                            'image' => $it['poster'],
+                            'image' => !empty($it['poster']) ? route('portal.img', ['u' => base64_encode($it['poster'])]) : '',
                             'title' => $it['title'],
                             'badge' => $it['meta'] ?: '18+',
                             'sub'   => null,

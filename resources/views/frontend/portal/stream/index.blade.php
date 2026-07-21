@@ -39,6 +39,7 @@
             </div>
         @endif
 
+        @php $proxyPoster = !empty($srcConf['proxy_poster']); @endphp
         @foreach($sections as $sec)
             <div class="cy-section">
                 <h2 class="cy-section-title"><i class="fas {{ $cat['icon'] }}"></i> {{ $sec['title'] }}</h2>
@@ -47,7 +48,7 @@
                         @foreach($sec['items'] as $it)
                             @include('frontend.portal.partials.card', [
                                 'url'   => route('portal.stream.detail', ['category' => $category, 'id' => $it['id']]) . '?source=' . $src,
-                                'image' => $it['poster'],
+                                'image' => ($proxyPoster && !empty($it['poster'])) ? route('portal.img', ['u' => base64_encode($it['poster'])]) : $it['poster'],
                                 'title' => $it['title'],
                                 'badge' => $it['meta'] ?: null,
                                 'sub'   => null,
