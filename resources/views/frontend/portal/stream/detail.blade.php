@@ -46,7 +46,7 @@
                     @if(count($data['episodes']))
                         <div class="cy-eplist">
                             @foreach($data['episodes'] as $e)
-                                <a href="{{ route($epRoute, ['category' => $category, 'id' => $e['id']]) . '?source=' . $src }}" class="cy-ep">
+                                <a href="{{ route($epRoute, ['category' => $category, 'id' => $e['id']]) . '?source=' . $src . ($isRead ? '&m=' . urlencode($id) : '') }}" class="cy-ep">
                                     <span>
                                         <span class="ep-t">{{ $e['label'] }}</span>
                                         @if($e['date'])<br><span class="ep-d">{{ $e['date'] }}</span>@endif

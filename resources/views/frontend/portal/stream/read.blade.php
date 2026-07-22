@@ -1,19 +1,43 @@
 @extends('frontend.layout.app')
 @section('title', ($ch['mangaTitle'] ?? 'Baca') . ' ' . ($ch['title'] ?? ''))
 
+@php
+    $mid        = $chapters['mangaId'] ?? '';
+    $items      = $chapters['items'] ?? [];
+    $curId      = trim((string) $id, '/');
+    $mangaTitle = ($chapters['mangaTitle'] ?? '') ?: ($ch['mangaTitle'] ?? '');
+    $chUrl = fn ($cid) => route('portal.stream.read', ['category' => $category, 'id' => $cid]) . '?source=' . $src . ($mid !== '' ? '&m=' . urlencode($mid) : '');
+    $detailUrl = $mid !== ''
+        ? route('portal.stream.detail', ['category' => $category, 'id' => $mid]) . '?source=' . $src
+        : route('portal.stream.index', $category) . '?source=' . $src;
+@endphp
+
 @section('content')
 <div class="portal-page">
     <div class="portal-wrap">
         <div class="portal-crumb">
             <a href="{{ route('portal.hub') }}">Portal</a> <i class="fas fa-chevron-right"></i>
             <a href="{{ route('portal.stream.index', $category) }}?source={{ $src }}">{{ $cat['label'] }}</a>
+            @if($mangaTitle)
+                <i class="fas fa-chevron-right"></i> <a href="{{ $detailUrl }}">{{ \Illuminate\Support\Str::limit($mangaTitle, 42) }}</a>
+            @endif
+            <i class="fas fa-chevron-right"></i> <span>{{ $ch['title'] }}</span>
         </div>
 
+        {{-- Top bar: chapter dropdown + daftar + prev/next --}}
         <div class="cy-reader-bar">
-            <h1>{{ $ch['mangaTitle'] }} — {{ $ch['title'] }}</h1>
-            <div class="cy-nav-eps">
-                @if($ch['prev'])<a class="cy-btn cy-btn-ghost" href="{{ route('portal.stream.read', ['category' => $category, 'id' => $ch['prev']]) . '?source=' . $src }}"><i class="fas fa-backward"></i> Prev</a>@endif
-                @if($ch['next'])<a class="cy-btn" href="{{ route('portal.stream.read', ['category' => $category, 'id' => $ch['next']]) . '?source=' . $src }}">Next <i class="fas fa-forward"></i></a>@endif
+            <h1>{{ $mangaTitle ? $mangaTitle . ' — ' : '' }}{{ $ch['title'] }}</h1>
+            <div class="cy-readnav">
+                @if(count($items))
+                    <select class="cy-chsel" onchange="if(this.value)window.location.href=this.value" aria-label="Pilih chapter">
+                        @foreach($items as $it)
+                            <option value="{{ $chUrl($it['id']) }}" @if($it['id'] === $curId) selected @endif>{{ $it['label'] }}</option>
+                        @endforeach
+                    </select>
+                @endif
+                <a class="cy-btn cy-btn-ghost" href="{{ $detailUrl }}" title="Daftar chapter"><i class="fas fa-list-ol"></i></a>
+                @if($ch['prev'])<a class="cy-btn cy-btn-ghost" href="{{ $chUrl($ch['prev']) }}" title="Sebelumnya"><i class="fas fa-backward"></i></a>@endif
+                @if($ch['next'])<a class="cy-btn" href="{{ $chUrl($ch['next']) }}">Next <i class="fas fa-forward"></i></a>@endif
             </div>
         </div>
 
@@ -27,19 +51,41 @@
                 @endforeach
             </div>
 
-            {{-- Floating loader: muncul hanya saat panel yang sedang kamu lihat belum selesai memuat --}}
+            {{-- Floating loader: muncul hanya saat panel yang sedang dilihat belum selesai memuat --}}
             <div class="cy-loadbar" id="cy-loadbar" role="status" aria-live="polite">
                 <span class="sp"></span><span id="cy-loadbar-txt">Memuat…</span>
             </div>
+
+            {{-- Bottom bar: chapter dropdown + prev/next --}}
             <div class="cy-reader-bar" style="margin-top:1.2rem">
                 <span style="font-size:.8rem;color:#8fb2c4">{{ count($ch['images']) }} halaman</span>
-                <div class="cy-nav-eps">
-                    @if($ch['prev'])<a class="cy-btn cy-btn-ghost" href="{{ route('portal.stream.read', ['category' => $category, 'id' => $ch['prev']]) . '?source=' . $src }}"><i class="fas fa-backward"></i> Prev</a>@endif
-                    @if($ch['next'])<a class="cy-btn" href="{{ route('portal.stream.read', ['category' => $category, 'id' => $ch['next']]) . '?source=' . $src }}">Next <i class="fas fa-forward"></i></a>@endif
+                <div class="cy-readnav">
+                    @if(count($items))
+                        <select class="cy-chsel" onchange="if(this.value)window.location.href=this.value" aria-label="Pilih chapter">
+                            @foreach($items as $it)
+                                <option value="{{ $chUrl($it['id']) }}" @if($it['id'] === $curId) selected @endif>{{ $it['label'] }}</option>
+                            @endforeach
+                        </select>
+                    @endif
+                    @if($ch['prev'])<a class="cy-btn cy-btn-ghost" href="{{ $chUrl($ch['prev']) }}"><i class="fas fa-backward"></i> Prev</a>@endif
+                    @if($ch['next'])<a class="cy-btn" href="{{ $chUrl($ch['next']) }}">Next <i class="fas fa-forward"></i></a>@endif
                 </div>
             </div>
+
+            {{-- Shortcut: semua chapter --}}
+            @if(count($items))
+                <div class="cy-chshortcut">
+                    <div class="cy-chshortcut-head"><i class="fas fa-grip"></i> Pilih Chapter <span>({{ count($items) }})</span></div>
+                    <div class="cy-chgrid">
+                        @foreach($items as $it)
+                            @php $blabel = trim(preg_replace('/^chapter\s*/i', '', (string) $it['label'])); @endphp
+                            <a class="cy-chbtn {{ $it['id'] === $curId ? 'active' : '' }}" href="{{ $chUrl($it['id']) }}" title="{{ $it['label'] }}">{{ $blabel !== '' ? $blabel : $it['label'] }}</a>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
         @else
-            <div class="cy-empty"><i class="fas fa-image"></i><p>Halaman tidak dapat dimuat dari sumber ini.</p></div>
+            <div class="cy-empty"><i class="fas fa-image"></i><p>Halaman tidak dapat dimuat dari sumber ini. Coba <a href="{{ $detailUrl }}">daftar chapter</a> atau chapter lain.</p></div>
         @endif
     </div>
 </div>
@@ -56,8 +102,6 @@
     let loaded  = 0;
 
     function refresh(){
-        // Only nag when a panel currently in/near the viewport is still loading —
-        // lazy panels far below never trigger the badge, so it stays unobtrusive.
         const waiting = pages.some(function(p){
             return p.dataset.vis === '1' && !p.classList.contains('is-loaded') && !p.classList.contains('is-error');
         });
@@ -82,7 +126,6 @@
         });
     });
 
-    // Tap a failed panel to retry (cache-buster param; the proxy ignores it).
     reader.addEventListener('click', function(e){
         const p = e.target.closest('.cy-page.is-error');
         if(!p) return;
@@ -94,7 +137,6 @@
         img.setAttribute('src', src + (src.indexOf('?') >= 0 ? '&' : '?') + '_r=' + (new Date().getTime()));
     });
 
-    // Track which panels are near the viewport.
     if ('IntersectionObserver' in window) {
         const io = new IntersectionObserver(function(entries){
             entries.forEach(function(en){ en.target.dataset.vis = en.isIntersecting ? '1' : '0'; });
@@ -102,7 +144,7 @@
         }, { rootMargin: '300px 0px' });
         pages.forEach(function(p){ io.observe(p); });
     } else {
-        pages.forEach(function(p){ p.dataset.vis = '1'; }); // no IO: just show while loading
+        pages.forEach(function(p){ p.dataset.vis = '1'; });
     }
 
     refresh();

@@ -106,7 +106,10 @@ class StreamController extends Controller
         }
         $ch = $this->client->chapter($category, $src, $id);
         abort_if(!$ch, 404, 'Chapter tidak ditemukan.');
-        return view('frontend.portal.stream.read', compact('category', 'cat', 'src', 'ch', 'id'));
+        // Full chapter list for the reader's dropdown / shortcut buttons / breadcrumb.
+        // ?m= (manga id) comes from the detail page link; else derived from the chapter id.
+        $chapters = $this->client->chapterListFor($category, $src, $id, (string) $r->query('m', ''));
+        return view('frontend.portal.stream.read', compact('category', 'cat', 'src', 'ch', 'id', 'chapters'));
     }
 
     /** AJAX: resolve Otakudesu-family serverId -> embed URL. */

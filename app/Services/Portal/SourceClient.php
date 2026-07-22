@@ -165,29 +165,58 @@ class SourceClient
      * Assumes the chapter id encodes "{mangaSlug}-chapter-N" and the list is newest-first.
      * Returns [prevId|null, nextId|null]; [null,null] if it can't map (safe no-op).
      */
+    /**
+     * Full ordered chapter list for the manga a chapter belongs to — powers the
+     * reader's chapter dropdown / shortcut buttons / breadcrumb. $mangaId may be
+     * passed explicitly (from the detail link's ?m=), else it's derived from a
+     * "{manga}-chapter-N" id. Empty items[] if it can't resolve (e.g. UUID id, no ?m=).
+     * @return array{mangaId:string,mangaTitle:string,items:array<int,array{id:string,label:string}>}
+     */
+    public function chapterListFor(string $cat, string $src, string $chapterId, string $mangaId = ''): array
+    {
+        $empty = ['mangaId' => '', 'mangaTitle' => '', 'items' => []];
+        $mangaId = trim($mangaId, '/');
+        if ($mangaId === '') {
+            $cur   = trim($chapterId, '/');
+            $guess = preg_replace('/-chapter-.*$/i', '', $cur);
+            if ($guess === '' || $guess === $cur) {
+                return $empty;
+            }
+            $mangaId = $guess;
+        }
+        $detail = $this->detail($cat, $src, $mangaId);
+        if (!$detail) {
+            return $empty;
+        }
+        $items = array_map(
+            fn ($e) => ['id' => trim((string) ($e['id'] ?? ''), '/'), 'label' => (string) ($e['label'] ?? 'Chapter')],
+            $detail['episodes'] ?? []
+        );
+        return ['mangaId' => $mangaId, 'mangaTitle' => (string) ($detail['title'] ?? ''), 'items' => array_values(array_filter($items, fn ($i) => $i['id'] !== ''))];
+    }
+
+    /**
+     * prev/next chapter ids from the ordered chapter list — for sources with broken/
+     * missing read-nav (mangasusuku "#/next/"). List is newest-first. Returns [prev, next].
+     */
     protected function deriveChapterNav(string $cat, string $src, string $id): array
     {
-        $cur = trim($id, '/');
-        $mangaSlug = preg_replace('/-chapter-.*$/i', '', $cur);
-        if ($mangaSlug === '' || $mangaSlug === $cur) {
-            return [null, null]; // id doesn't look like "{manga}-chapter-N"
-        }
-        $detail = $this->detail($cat, $src, $mangaSlug);
-        $eps = $detail['episodes'] ?? [];
-        if (!$eps) {
+        $items = $this->chapterListFor($cat, $src, $id)['items'];
+        if (!$items) {
             return [null, null];
         }
+        $cur = trim($id, '/');
         $idx = null;
-        foreach ($eps as $i => $e) {
-            if (trim((string) ($e['id'] ?? ''), '/') === $cur) { $idx = $i; break; }
+        foreach ($items as $i => $it) {
+            if ($it['id'] === $cur) { $idx = $i; break; }
         }
         if ($idx === null) {
             return [null, null];
         }
-        // List is newest-first (chapter N at a lower index): next = idx-1, prev = idx+1.
-        $next = $idx > 0 ? trim((string) $eps[$idx - 1]['id'], '/') : null;
-        $prev = $idx < count($eps) - 1 ? trim((string) $eps[$idx + 1]['id'], '/') : null;
-        return [$prev, $next];
+        return [
+            $idx < count($items) - 1 ? $items[$idx + 1]['id'] : null, // prev (older = higher index)
+            $idx > 0 ? $items[$idx - 1]['id'] : null,                 // next (newer = lower index)
+        ];
     }
 
     /**
