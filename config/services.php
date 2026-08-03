@@ -68,6 +68,9 @@ return [
         'embed_base'  => env('TMDB_EMBED_BASE', 'http://127.0.0.1:8787'),
         // OpenSubtitles (film subtitles). Free API key from opensubtitles.com → API Consumer.
         'opensubtitles_key' => env('OPENSUBTITLES_API_KEY', ''),
+        // manco-rust sync engine (comic page resolver). Port dibuat konfigurabel karena 8000
+        // sudah dipakai app lain di server ini; default ke 8101 (lihat systemd mancosync-rust).
+        'rust_base' => env('MANCO_RUST_BASE', 'http://127.0.0.1:8101'),
     ],
 
 ];

@@ -42,7 +42,7 @@ class Chapter extends Model
     {
         try {
             // Rust container port is 8000. In local windows environment, we hit localhost:8000
-            $response = Http::timeout(3)->get("http://127.0.0.1:8000/api/chapters/{$this->id}/pages");
+            $response = Http::timeout(3)->get(config('services.manco.rust_base')."/api/chapters/{$this->id}/pages");
             if ($response->successful()) {
                 $pages = $response->json('data') ?? [];
                 
@@ -74,7 +74,7 @@ class Chapter extends Model
     public function syncPagesToNoSql(array $pages): bool
     {
         try {
-            $response = Http::timeout(5)->post("http://127.0.0.1:8000/api/chapters/{$this->id}/pages", [
+            $response = Http::timeout(5)->post(config('services.manco.rust_base')."/api/chapters/{$this->id}/pages", [
                 'pages' => $pages,
             ]);
             return $response->successful();
