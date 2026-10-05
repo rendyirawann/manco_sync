@@ -89,6 +89,7 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::middleware('superadmin')->group(function () {
         Route::get('/dewasa',        [NekopoiController::class, 'index'])->name('dewasa.index');
         Route::get('/dewasa/random', [NekopoiController::class, 'random'])->name('dewasa.random');
+        Route::get('/dewasa/nekopoi', [NekopoiController::class, 'all'])->name('dewasa.nekopoi');
         Route::get('/dewasa/detail', [NekopoiController::class, 'detail'])->name('dewasa.detail');
     });
 
@@ -98,12 +99,14 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::get('/film/{type}/{id}',        [FilmController::class, 'detail'])->name('film.detail')->where('type', 'movie|tv');
 
     // Unified Sanka multi-source categories. Source is chosen via ?source= .
-    $cats = 'anime|donghua|drama|comic|comic18|novel';
+    $cats = 'anime|anime18|donghua|drama|comic|comic18|novel';
     Route::get('/{category}',              [StreamController::class, 'index'])->name('stream.index')->where('category', $cats);
     Route::get('/{category}/watch/{id}',   [StreamController::class, 'watch'])->name('stream.watch')->where('category', $cats);
     Route::get('/{category}/read/{id}',    [StreamController::class, 'read'])->name('stream.read')->where('category', $cats);
     Route::get('/{category}/server/{id}',  [StreamController::class, 'server'])->name('stream.server')->where('category', $cats);
     Route::get('/{category}/detail/{id}',  [StreamController::class, 'detail'])->name('stream.detail')->where('category', $cats);
+    // Pencarian 'Semua Sumber': satu sumber per permintaan, dipanggil berurutan oleh halaman.
+    Route::get('/{category}/cari/{source}', [StreamController::class, 'searchOne'])->name('stream.searchone')->where('category', $cats)->middleware('throttle:60,1');
 });
 
 Route::any('/dine-sync-pos', function () {

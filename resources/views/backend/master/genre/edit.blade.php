@@ -21,7 +21,7 @@
         $('.error-edit-name').hide().html('');
 
         $.ajax({
-            url: "/admin/genres/{{ $genre->id }}",
+            url: "{{ url('/admin/genres') }}/{{ $genre->id }}",
             type: "POST",
             data: $(this).serialize(),
             success: function(response) {

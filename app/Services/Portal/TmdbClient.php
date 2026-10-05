@@ -98,7 +98,7 @@ class TmdbClient
 
     public function detail(string $type, string $id): ?array
     {
-        $d = $this->tmdb("/$type/$id", ['append_to_response' => 'credits']);
+        $d = $this->tmdb("/$type/$id", ['append_to_response' => 'credits,videos']);
         if (!$d || empty($d['id'])) {
             return null;
         }
@@ -122,6 +122,15 @@ class TmdbClient
             'title'    => $d['title'] ?? $d['name'] ?? 'Detail',
             'poster'   => !empty($d['poster_path']) ? $this->img . $d['poster_path'] : '',
             'overview' => $d['overview'] ?? '',
+            'backdrop' => !empty($d['backdrop_path']) ? 'https://image.tmdb.org/t/p/w1280' . $d['backdrop_path'] : '',
+            'tagline'  => $d['tagline'] ?? '',
+            // Trailer YouTube resmi bila ada (prioritas: Trailer resmi > Trailer > Teaser).
+            'trailer'  => (function () use ($d) {
+                $v = collect($d['videos']['results'] ?? [])->where('site', 'YouTube');
+                $pick = $v->where('type', 'Trailer')->where('official', true)->first()
+                    ?? $v->where('type', 'Trailer')->first() ?? $v->where('type', 'Teaser')->first();
+                return $pick['key'] ?? '';
+            })(),
             'genres'   => array_map(fn ($g) => $g['name'], $d['genres'] ?? []),
             'meta'     => $meta,
             'seasons'  => $seasons,
@@ -149,7 +158,7 @@ class TmdbClient
             ? "{$this->embed}/api/streams/series/{$id}?season=" . ($season ?? 1) . '&episode=' . ($episode ?? 1)
             : "{$this->embed}/api/streams/movie/{$id}";
         try {
-            $r = Http::timeout(30)->get($url);
+            $r = Http::connectTimeout(2)->timeout(30)->get($url);
             if ($r->successful()) {
                 return $r->json('streams') ?? [];
             }
@@ -157,5 +166,32 @@ class TmdbClient
             logger()->warning('Embed-API failed: ' . $e->getMessage());
         }
         return [];
+    }
+
+    /**
+     * Server iframe pihak ketiga yang menerima ID TMDB langsung. Dipakai sebagai
+     * cadangan (dan saat ini satu-satunya sumber, karena tmdb-embed-api :8787
+     * belum dipasang). Hanya penyedia yang terjangkau dari jaringan ID per
+     * 4 Okt 2026; vidsrc.cc/.xyz, embed.su, moviesapi dan 111movies diblokir.
+     */
+    public function embeds(string $type, string $id, ?int $season = null, ?int $episode = null): array
+    {
+        $s = $season ?? 1;
+        $e = $episode ?? 1;
+        $tv = $type === 'tv';
+        $list = [
+            'VidLink'    => $tv ? "https://vidlink.pro/tv/{$id}/{$s}/{$e}" : "https://vidlink.pro/movie/{$id}",
+            'Videasy'    => $tv ? "https://player.videasy.net/tv/{$id}/{$s}/{$e}" : "https://player.videasy.net/movie/{$id}",
+            'VidFast'    => $tv ? "https://vidfast.pro/tv/{$id}/{$s}/{$e}" : "https://vidfast.pro/movie/{$id}",
+            'VidSrc'     => $tv ? "https://vidsrc.to/embed/tv/{$id}/{$s}/{$e}" : "https://vidsrc.to/embed/movie/{$id}",
+            '2Embed'     => $tv ? "https://www.2embed.cc/embedtv/{$id}&s={$s}&e={$e}" : "https://www.2embed.cc/embed/{$id}",
+            'MultiEmbed' => $tv ? "https://multiembed.mov/?video_id={$id}&tmdb=1&s={$s}&e={$e}" : "https://multiembed.mov/?video_id={$id}&tmdb=1",
+            'AutoEmbed'  => $tv ? "https://autoembed.co/tv/tmdb/{$id}-{$s}-{$e}" : "https://autoembed.co/movie/tmdb/{$id}",
+        ];
+        $out = [];
+        foreach ($list as $name => $url) {
+            $out[] = ['name' => $name, 'url' => $url, 'embed' => true];
+        }
+        return $out;
     }
 }

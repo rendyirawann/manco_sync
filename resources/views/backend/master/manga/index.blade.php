@@ -389,7 +389,7 @@
             `);
 
             $.ajax({
-                url: "/admin/mangas/" + id + "/edit",
+                url: "{{ url('/admin/mangas') }}/" + id + "/edit",
                 type: "GET",
                 success: function(response) {
                     $('#modal_edit_content').html(response.html);
@@ -410,7 +410,7 @@
             btn.attr('disabled', true).html('Menghapus...');
 
             $.ajax({
-                url: "/admin/mangas/" + deleteId,
+                url: "{{ url('/admin/mangas') }}/" + deleteId,
                 type: "DELETE",
                 data: {
                     _token: "{{ csrf_token() }}"

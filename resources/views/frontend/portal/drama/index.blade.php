@@ -55,7 +55,7 @@
                             ])
                         @endforeach
                     </div>
-                    <p style="font-size:.78rem;color:#6f93a3;margin-top:1rem"><i class="fas fa-circle-info"></i> Key terdeteksi &amp; API merespons. Halaman detail + player episode akan disambungkan di iterasi berikutnya (schema episode: <code>videoUrl</code> + <code>qualityList</code> + <code>subtitles</code>).</p>
+                    <p style="font-size:.78rem;color:var(--p-dim);margin-top:1rem"><i class="fas fa-circle-info"></i> Key terdeteksi &amp; API merespons. Halaman detail + player episode akan disambungkan di iterasi berikutnya (schema episode: <code>videoUrl</code> + <code>qualityList</code> + <code>subtitles</code>).</p>
                 </div>
             @else
                 <div class="cy-notice">

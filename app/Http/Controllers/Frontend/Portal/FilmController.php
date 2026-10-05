@@ -87,6 +87,8 @@ class FilmController extends Controller
         }
         // HLS first (works cross-browser via hls.js), then MP4.
         usort($playable, fn ($a, $b) => (int) ($b['hls'] ?? false) <=> (int) ($a['hls'] ?? false));
+        // Server iframe (TMDB ID) selalu tersedia di belakang stream langsung.
+        $playable = array_merge($playable, $this->tmdb->embeds($type, $id, $season, $episode));
 
         // Subtitles (OpenSubtitles) → WebVTT track URLs. tracks() already orders
         // them Indonesia/English first, so the first <track> is the default and

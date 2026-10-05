@@ -418,7 +418,7 @@
             }).then((result) => {
                 if (result.isConfirmed) {
                     $.ajax({
-                        url: "/admin/chapters/" + id,
+                        url: "{{ url('/admin/chapters') }}/" + id,
                         type: "DELETE",
                         data: {
                             _token: "{{ csrf_token() }}"

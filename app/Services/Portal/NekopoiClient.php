@@ -35,10 +35,14 @@ class NekopoiClient
         return $out;
     }
 
-    public function latest(): array
+    // Per Okt 2026 hulu memindahkan Nekopoi dari /anime/neko/* ke /anime/nekopoi/*;
+    // alamat lama dijawab 403 "salah endpoint". Isi per judul ada di /episode/{slug},
+    // dan /random sudah tidak ada.
+
+    public function latest(int $page = 1): array
     {
-        $b = $this->sanka->json('/anime/neko/latest', 300);
-        return $this->cards($b['results'] ?? $b['data'] ?? []);
+        $b = $this->sanka->json('/anime/nekopoi/latest?page=' . max(1, $page), 300);
+        return $this->cards($b['data'] ?? $b['results'] ?? []);
     }
 
     public function search(string $q): array
@@ -46,23 +50,29 @@ class NekopoiClient
         if (trim($q) === '') {
             return [];
         }
-        $b = $this->sanka->json('/anime/neko/search/' . rawurlencode($q), 120);
-        return $this->cards($b['results'] ?? $b['data'] ?? []);
+        $b = $this->sanka->json('/anime/nekopoi/search?q=' . rawurlencode($q), 120);
+        return $this->cards($b['data'] ?? $b['results'] ?? []);
     }
 
+    /** $url = tautan halaman nekopoi (dari kartu); slug-nya = segmen terakhir. */
     public function detail(string $url): ?array
     {
-        if ($url === '') {
+        $slug = basename(rtrim(parse_url($url, PHP_URL_PATH) ?: $url, '/'));
+        if ($slug === '' || !preg_match('/^[a-z0-9-]+$/i', $slug)) {
             return null;
         }
-        $b = $this->sanka->json('/anime/neko/get?url=' . urlencode($url), 600);
+        $b = $this->sanka->json('/anime/nekopoi/episode/' . $slug, 600);
         return $this->normDetail($b['data'] ?? $b);
     }
 
+    /** Hulu tidak lagi punya /random: ambil judul acak dari halaman terbaru acak. */
     public function random(): ?array
     {
-        $b = $this->sanka->json('/anime/neko/random', 60);
-        return $this->normDetail($b['data'] ?? $b);
+        $items = $this->latest(random_int(1, 50)) ?: $this->latest(1);
+        if (!$items) {
+            return null;
+        }
+        return $this->detail($items[array_rand($items)]['url']);
     }
 
     /** Defensive detail normalizer — collects any http links as downloads. */
@@ -72,7 +82,26 @@ class NekopoiClient
             return null;
         }
         $downloads = [];
-        $dl = $d['download'] ?? $d['downloads'] ?? $d['stream'] ?? $d['streaming'] ?? [];
+        $streams = [];
+        // Bentuk baru: streams[{server,url}] + downloads[{quality, links[{host,url}]}].
+        // Stream = halaman embed (DoodStream/playmogo /e/…) yang boleh di-iframe →
+        // diputar langsung di halaman detail, bukan lagi tautan keluar.
+        foreach ((array) ($d['streams'] ?? []) as $st) {
+            $u = is_array($st) ? ($st['url'] ?? '') : '';
+            if (is_string($u) && str_starts_with($u, 'http') && !str_contains($u, 'discord.com')) {
+                $streams[] = ['name' => (string) ($st['server'] ?? 'Server ' . (count($streams) + 1)), 'url' => $u];
+            }
+        }
+        if (isset($d['downloads'][0]['links'])) {
+            foreach ($d['downloads'] as $q) {
+                foreach ((array) ($q['links'] ?? []) as $l) {
+                    if (!empty($l['url'])) {
+                        $downloads[] = ['name' => trim(($q['quality'] ?? '') . ' · ' . ($l['host'] ?? 'Link'), ' ·'), 'url' => $l['url']];
+                    }
+                }
+            }
+        }
+        $dl = $downloads ? [] : ($d['download'] ?? $d['downloads'] ?? $d['stream'] ?? $d['streaming'] ?? []);
         if (is_array($dl)) {
             array_walk_recursive($dl, function ($v, $k) use (&$downloads) {
                 if (is_string($v) && str_starts_with($v, 'http')) {
@@ -80,11 +109,11 @@ class NekopoiClient
                 }
             });
         }
-        $genre = $d['genre'] ?? '';
+        $genre = $d['genre'] ?? ($d['series']['name'] ?? '');
         if (is_array($genre)) {
             $genre = implode(', ', array_map(fn ($g) => is_array($g) ? ($g['name'] ?? '') : $g, $genre));
         }
-        $syn = $d['synopsis'] ?? '';
+        $syn = $d['synopsis'] ?? $d['description'] ?? '';
         if (is_array($syn)) {
             $syn = implode(' ', array_filter($syn, 'is_string'));
         }
@@ -94,6 +123,7 @@ class NekopoiClient
             'img'       => $d['img'] ?? $d['thumbnail'] ?? $d['cover'] ?? '',
             'synopsis'  => (string) $syn,
             'genre'     => (string) $genre,
+            'streams'   => $streams,
             'meta'      => array_filter([
                 'Producer' => $d['producer'] ?? '', 'Durasi' => $d['duration'] ?? '', 'Size' => $d['size'] ?? '',
             ]),

@@ -58,7 +58,7 @@
 
             {{-- Bottom bar: chapter dropdown + prev/next --}}
             <div class="cy-reader-bar" style="margin-top:1.2rem">
-                <span style="font-size:.8rem;color:#8fb2c4">{{ count($ch['images']) }} halaman</span>
+                <span style="font-size:.8rem;color:var(--p-muted)">{{ count($ch['images']) }} halaman</span>
                 <div class="cy-readnav">
                     @if(count($items))
                         <select class="cy-chsel" onchange="if(this.value)window.location.href=this.value" aria-label="Pilih chapter">

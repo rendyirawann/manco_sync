@@ -33,7 +33,7 @@
                 @endforeach
             </div>
             <div class="cy-reader-bar" style="margin-top:1.2rem">
-                <span style="font-size:.8rem;color:#8fb2c4">{{ count($images) }} halaman</span>
+                <span style="font-size:.8rem;color:var(--p-muted)">{{ count($images) }} halaman</span>
                 <div class="cy-nav-eps">
                     @if($prev)<a class="cy-btn cy-btn-ghost" href="{{ route('portal.comic.read', $prev) }}"><i class="fas fa-backward"></i> Prev</a>@endif
                     @if($next)<a class="cy-btn" href="{{ route('portal.comic.read', $next) }}">Next <i class="fas fa-forward"></i></a>@endif

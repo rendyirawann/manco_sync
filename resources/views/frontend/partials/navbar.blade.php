@@ -6,6 +6,7 @@
             <div class="topbar-left">
                 <a href="{{ route('portal.stream.index', 'anime') }}" class="topbar-link"><i class="fas fa-fire"></i> Trending</a>
                 <a href="{{ route('portal.hub') }}" class="topbar-link"><i class="fas fa-infinity"></i> Semua Portal</a>
+                <span class="topbar-social">@include('frontend.partials.social-links', ['class' => 'topbar-link'])</span>
             </div>
             <div class="topbar-logo">
                 <a href="{{ route('frontend.home') }}" class="site-logo">
@@ -39,8 +40,6 @@
                     <li><a href="{{ route('portal.stream.index', 'novel') }}"><i class="fas fa-feather-pointed"></i> Novel</a></li>
                     <li><a href="{{ route('portal.stream.index', 'drama') }}"><i class="fas fa-clapperboard"></i> Drama</a></li>
                     <li><a href="{{ route('portal.film.index') }}" class="{{ request()->routeIs('portal.film.*') ? 'active' : '' }}"><i class="fas fa-film"></i> Film</a></li>
-                    <li><a href="{{ route('portal.tv.index') }}" class="{{ request()->routeIs('portal.tv.*') ? 'active' : '' }}"><i class="fas fa-tower-broadcast"></i> Live TV</a></li>
-                    <li><a href="{{ route('portal.dewasa.index') }}" class="{{ request()->routeIs('portal.dewasa.*') ? 'active' : '' }}" style="color:#ff5c8a"><i class="fas fa-fire"></i> 18+</a></li>
                 </ul>
             </div>
         </nav>

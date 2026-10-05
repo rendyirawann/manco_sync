@@ -88,7 +88,7 @@ ul{list-style:none}
 [data-theme="light"] .site-header{background:rgba(245,244,255,0.95)}
 .header-topbar{display:flex;align-items:center;justify-content:space-between;padding:.5rem 1.5rem;border-bottom:1px solid var(--border);gap:1rem;flex-wrap:wrap}
 .topbar-link{color:var(--text-muted);font-size:.82rem;display:inline-flex;align-items:center;gap:.35rem;transition:color var(--transition)}
-.topbar-link:hover,.topbar-left a+a{margin-left:1.25rem}
+.topbar-left a+a{margin-left:1.25rem}
 .topbar-link:hover{color:var(--accent-light)}
 .topbar-left{display:flex;gap:1.25rem}
 .site-logo{display:flex;align-items:center;gap:.5rem;font-family:'Orbitron',sans-serif;font-size:1.4rem;font-weight:900;color:#fff;letter-spacing:1px}
@@ -277,3 +277,10 @@ ul{list-style:none}
     .footer-links{grid-template-columns:1fr}
     .search-bar input{width:130px}
 }
+
+/* Ikon sosial di topbar */
+.topbar-social{display:inline-flex;align-items:center;gap:.15rem;margin-left:.4rem;padding-left:.6rem;border-left:1px solid rgba(255,255,255,.12)}
+.topbar-social .topbar-link,.topbar-social .topbar-link:hover{padding:0 .35rem;margin-left:0}
+.topbar-social .topbar-link:hover{color:var(--accent-light);transform:translateY(-1px)}
+.topbar-social .topbar-link{transition:color var(--transition),transform var(--transition)}
+@media (max-width:640px){.topbar-social{display:none}}

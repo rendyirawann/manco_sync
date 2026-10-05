@@ -217,7 +217,7 @@
             `);
 
             $.ajax({
-                url: "/admin/genres/" + id + "/edit",
+                url: "{{ url('/admin/genres') }}/" + id + "/edit",
                 type: "GET",
                 success: function(response) {
                     $('#modal_edit_content').html(response.html);
@@ -238,7 +238,7 @@
             btn.attr('disabled', true).html('Menghapus...');
 
             $.ajax({
-                url: "/admin/genres/" + deleteId,
+                url: "{{ url('/admin/genres') }}/" + deleteId,
                 type: "DELETE",
                 data: {
                     _token: "{{ csrf_token() }}"

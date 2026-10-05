@@ -86,14 +86,26 @@
         if (useProxy) fmtEl.innerHTML = '<i class="fas fa-tower-broadcast"></i> HLS · proxy';
         if (!(window.Hls && window.Hls.isSupported())) { video.src = target; initPlyr(); return; }
         if (hlsInst) { try { hlsInst.destroy(); } catch(e){} }
-        hlsInst = new Hls({ maxBufferLength: 30 });
+        // Buffer lebih panjang + kualitas dibatasi ukuran pemutar: mencegah putar-
+        // berhenti-putar (spinner Plyr berkedip) pada host yang lambat.
+        hlsInst = new Hls({
+            maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 30,
+            capLevelToPlayerSize: true, abrEwmaDefaultEstimate: 1500000,
+            fragLoadingMaxRetry: 4, manifestLoadingMaxRetry: 2,
+        });
         hlsInst.loadSource(target); hlsInst.attachMedia(video);
-        hlsInst.on(Hls.Events.MANIFEST_PARSED, initPlyr);
+        let mediaRecovers = 0;
         hlsInst.on(Hls.Events.ERROR, function(evt, data){
-            if (data && data.fatal && !useProxy && (data.type === 'networkError' || data.type === 'otherError')) {
-                try { hlsInst.destroy(); } catch(e){}
-                startHls(true);
+            if (!data || !data.fatal) return; // galat kecil dipulihkan hls.js sendiri
+            if (data.type === 'mediaError' && mediaRecovers < 2) {
+                // Pulihkan di tempat; dulu tidak ditangani → video berhenti/mulai berulang.
+                mediaRecovers++; hlsInst.recoverMediaError(); return;
             }
+            if (!useProxy && (data.type === 'networkError' || data.type === 'otherError')) {
+                try { hlsInst.destroy(); } catch(e){}
+                startHls(true); return;
+            }
+            fmtEl.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Stream gagal — coba server lain';
         });
     }
 
@@ -111,6 +123,7 @@
             video.addEventListener('error', function(){ startHls(true); }, { once:true });
             return;
         }
+        initPlyr(); // kontrol terpasang sejak awal: tidak ada pergantian tampilan saat manifest tiba
         if (window.Hls) startHls(false);
         else loadScript('https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js', function(){ startHls(false); });
     }

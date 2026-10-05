@@ -42,7 +42,7 @@
                         @endforeach
                     </div>
                 @endforeach
-                <p style="font-size:.75rem;color:#6f93a3;margin-top:.4rem"><i class="fas fa-circle-info"></i> Klik server jika video default tidak jalan.</p>
+                <p style="font-size:.75rem;color:var(--p-dim);margin-top:.4rem"><i class="fas fa-circle-info"></i> Klik server jika video default tidak jalan.</p>
             </div>
         @endif
 

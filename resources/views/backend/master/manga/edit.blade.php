@@ -106,7 +106,7 @@
         var formData = new FormData(this);
 
         $.ajax({
-            url: "/admin/mangas/{{ $manga->id }}",
+            url: "{{ url('/admin/mangas') }}/{{ $manga->id }}",
             type: "POST",
             data: formData,
             processData: false,

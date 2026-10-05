@@ -2,27 +2,27 @@
 @section('title', 'Baca ' . $chapter->manga->title . ' - Chapter ' . $chapter->chapter_number . ' - MancoSync')
 
 @section('content')
-<div style="background: #09090b; min-height: 100vh; color: #fff; padding-top: 20px; padding-bottom: 60px;">
+<div style="background: var(--bg); min-height: 100vh; color: var(--text); padding-top: 20px; padding-bottom: 60px;">
     <div class="container">
         
         <!-- Breadcrumb / Header Navigation -->
-        <div style="margin-bottom: 25px; padding: 15px 20px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 15px;">
+        <div style="margin-bottom: 25px; padding: 15px 20px; background: var(--bg2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 15px;">
             
-            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.9rem; color: #a1a1aa; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.9rem; color: var(--text-muted); flex-wrap: wrap;">
                 <a href="{{ route('frontend.home') }}" style="color: var(--primary-color, #7239ea); text-decoration: none; font-weight: 500;"><i class="fas fa-home"></i> Beranda</a>
                 <i class="fas fa-chevron-right" style="font-size: 0.75rem; opacity: 0.5;"></i>
                 <a href="{{ route('frontend.manga.show', $chapter->manga->slug) }}" style="color: var(--primary-color, #7239ea); text-decoration: none; font-weight: 500;">{{ $chapter->manga->title }}</a>
                 <i class="fas fa-chevron-right" style="font-size: 0.75rem; opacity: 0.5;"></i>
-                <span style="color: #fff; font-weight: 600;">Chapter {{ $chapter->chapter_number }}</span>
+                <span style="color: var(--text); font-weight: 600;">Chapter {{ $chapter->chapter_number }}</span>
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                 <!-- Title & Chapter Meta -->
                 <div>
-                    <h1 style="font-size: 1.5rem; font-weight: 800; color: #fff; margin: 0; font-family: 'Orbitron', sans-serif;">
+                    <h1 style="font-size: 1.5rem; font-weight: 800; color: var(--text); margin: 0; font-family: 'Orbitron', sans-serif;">
                         {{ $chapter->manga->title }}
                     </h1>
-                    <p style="margin: 5px 0 0 0; color: #a1a1aa; font-size: 0.9rem;">
+                    <p style="margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.9rem;">
                         Chapter {{ $chapter->chapter_number }} {{ $chapter->title ? ' - ' . $chapter->title : '' }}
                     </p>
                 </div>
@@ -76,9 +76,9 @@
                     </span>
                 </div>
             @empty
-                <div style="text-align: center; padding: 80px 20px; color: #6b7280;">
+                <div style="text-align: center; padding: 80px 20px; color: var(--text-dim);">
                     <i class="fas fa-images" style="font-size: 3rem; margin-bottom: 15px; opacity: 0.4;"></i>
-                    <h3 style="color: #fff; font-size: 1.25rem; margin-bottom: 10px;">Halaman Tidak Tersedia</h3>
+                    <h3 style="color: var(--text); font-size: 1.25rem; margin-bottom: 10px;">Halaman Tidak Tersedia</h3>
                     <p style="max-width: 450px; margin: 0 auto; line-height: 1.6;">
                         Halaman gambar untuk chapter ini belum disinkronisasikan ke NoSQL MongoDB. 
                         Silakan hubungi administrator atau coba sinkronisasi ulang chapter ini di panel admin.
@@ -88,7 +88,7 @@
         </div>
 
         <!-- Navigation Controls (Bottom) -->
-        <div style="padding: 15px 20px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; align-items: center; gap: 15px;">
+        <div style="padding: 15px 20px; background: var(--bg2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; align-items: center; gap: 15px;">
             @if($prevChapter)
                 <a href="{{ route('frontend.chapter.read', $prevChapter->slug) }}" class="btn-read-nav">
                     <i class="fas fa-arrow-left"></i> Sebelum
@@ -119,8 +119,8 @@
     /* Styling Navigasi Baca */
     .btn-read-nav {
         background: rgba(255, 255, 255, 0.05);
-        color: #fff;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text);
+        border: 1px solid var(--border);
         padding: 8px 16px;
         border-radius: 8px;
         font-weight: 600;
@@ -144,15 +144,15 @@
     }
     .btn-read-nav.disabled:hover {
         background: rgba(255, 255, 255, 0.05);
-        border-color: rgba(255, 255, 255, 0.1);
+        border-color: var(--border);
         box-shadow: none;
         transform: none;
     }
 
     .read-select {
         background: #18181b;
-        color: #fff;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text);
+        border: 1px solid var(--border);
         padding: 8px 12px;
         border-radius: 8px;
         font-size: 0.9rem;

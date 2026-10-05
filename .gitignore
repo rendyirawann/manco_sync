@@ -25,3 +25,6 @@ Thumbs.db
 /manco-rust/target
 rr
 .rr.yaml
+
+# backup lokal & sementara
+*.bak-*

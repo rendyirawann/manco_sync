@@ -7,10 +7,7 @@
                 </a>
                 <p>Platform baca manga, manhwa, dan manhua terlengkap dan terupdate setiap hari. Nikmati ribuan judul favorit Anda secara gratis!</p>
                 <div class="footer-social">
-                    <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
-                    <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
-                    <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
-                    <a href="#" aria-label="Discord"><i class="fab fa-discord"></i></a>
+                    @include('frontend.partials.social-links')
                 </div>
             </div>
             <div class="footer-links">
@@ -39,7 +36,7 @@
                         <li><a href="#">Kebijakan Privasi</a></li>
                         <li><a href="#">Syarat Penggunaan</a></li>
                         <li><a href="#">Hubungi Kami</a></li>
-                        <li><a href="/admin/login">Admin Panel</a></li>
+                        <li><a href="{{ url('/admin/login') }}">Admin Panel</a></li>
                     </ul>
                 </div>
             </div>

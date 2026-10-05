@@ -24,7 +24,7 @@
                 @endforeach
             </article>
             <div class="cy-reader-bar" style="margin-top:1.2rem">
-                <span style="font-size:.8rem;color:#8fb2c4">{{ count($ch['paragraphs']) }} paragraf</span>
+                <span style="font-size:.8rem;color:var(--p-muted)">{{ count($ch['paragraphs']) }} paragraf</span>
                 <div class="cy-nav-eps">
                     @if($ch['prev'])<a class="cy-btn cy-btn-ghost" href="{{ route('portal.stream.read', ['category' => $category, 'id' => $ch['prev']]) . '?source=' . $src }}"><i class="fas fa-backward"></i> Prev</a>@endif
                     @if($ch['next'])<a class="cy-btn" href="{{ route('portal.stream.read', ['category' => $category, 'id' => $ch['next']]) . '?source=' . $src }}">Next <i class="fas fa-forward"></i></a>@endif

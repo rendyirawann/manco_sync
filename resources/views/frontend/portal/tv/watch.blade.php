@@ -15,7 +15,7 @@
 
         @include('frontend.portal.partials.player', ['streamUrl' => $url, 'streamType' => 'video'])
 
-        <p style="font-size:.8rem;color:#6f93a3;margin-top:.9rem">
+        <p style="font-size:.8rem;color:var(--p-dim);margin-top:.9rem">
             <i class="fas fa-circle-info"></i> Channel live siaran publik. Kalau hitam/buffering: channel sedang offline, kena geo-blok (luar Indonesia), atau butuh referer — coba channel lain. <strong>TVRI Sport</strong> = channel bola / World Cup.
         </p>
     </div>

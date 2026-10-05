@@ -15,6 +15,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // Header keamanan (HSTS, CSP, X-Frame-Options, dll) untuk seluruh respons.
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
+        // Hanya nginx lokal yang bicara ke Octane. Mempercayainya membuat host,
+        // skema dan X-Forwarded-Prefix ikut terbaca, sehingga URL yang dihasilkan
+        // mengikuti alamat yang dipakai pengunjung: subfolder /manco-sync maupun
+        // domain sendiri (manco.hustlesync.my.id) sama-sama benar.
+        $middleware->trustProxies(at: ['127.0.0.1', '::1']);
+        $middleware->prepend(\App\Http\Middleware\ForceHttpsRequest::class);
+
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,

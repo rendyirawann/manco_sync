@@ -24,12 +24,24 @@ class SourceClient
 
     public function categories(): array
     {
-        return config('portal_sources', []);
+        return array_map(fn ($c) => $this->withoutDisabled($c), config('portal_sources', []));
     }
 
     public function category(string $cat): ?array
     {
-        return config("portal_sources.$cat");
+        $c = config("portal_sources.$cat");
+        return $c ? $this->withoutDisabled($c) : null;
+    }
+
+    /**
+     * Sumber bertanda 'disabled' (hulunya mati) disembunyikan dari pilihan sumber,
+     * tetapi konfigurasinya tetap utuh di config/portal_sources.php — cukup hapus
+     * tandanya bila hulunya pulih.
+     */
+    protected function withoutDisabled(array $cat): array
+    {
+        $cat['sources'] = array_filter($cat['sources'] ?? [], fn ($s) => empty($s['disabled']));
+        return $cat;
     }
 
     public function source(string $cat, string $src): ?array
@@ -40,16 +52,57 @@ class SourceClient
     /** First source key of a category (default selection). */
     public function defaultSource(string $cat): ?string
     {
-        $srcs = config("portal_sources.$cat.sources", []);
-        return array_key_first($srcs) ?: null;
+        return array_key_first($this->category($cat)['sources'] ?? []) ?: null;
     }
 
     protected function tpl(string $template, array $vars): string
     {
         foreach ($vars as $k => $v) {
+            // Slug yang dari hulunya SUDAH ber-persen-encoding (Maid:
+            // "osananajimi%e2%99%82-…") wajib di-encode sekali lagi; dikirim
+            // apa adanya, hulu men-decode-nya menjadi "♂" dan menjawab 500.
+            // Bila tautan kartunya diikuti browser, Laravel sudah men-decode id itu
+            // menjadi "♂"; kembalikan dulu ke bentuk persen huruf kecil milik hulu.
+            if ($k === 'id' && preg_match('/[^\x20-\x7e]/', (string) $v)) {
+                $v = preg_replace_callback('/%[0-9A-F]{2}/', fn ($m) => strtolower($m[0]), rawurlencode((string) $v));
+            }
+            if ($k === 'id' && str_contains((string) $v, '%')) {
+                $v = rawurlencode((string) $v);
+            }
             $template = str_replace('{' . $k . '}', $v, $template);
         }
         return $template;
+    }
+
+    /**
+     * Alamat lengkap untuk sebuah path sumber. Sumber yang dilayani API lain
+     * (kunci 'base', mis. anime-api lokal) mendapat path absolut; sisanya
+     * tetap relatif terhadap basis Sanka.
+     */
+    protected function at(?array $s, string $path): string
+    {
+        $base = $s['base'] ?? null;
+        return $base ? rtrim((string) $base, '/') . $path : $path;
+    }
+
+    /**
+     * Pecah "path#kunci": sebagian respons memuat beberapa daftar sekaligus
+     * (anime-api /oploverz/home: latestRelease & popularToday), dan '#kunci'
+     * memilih daftar mana yang ditampilkan.
+     * @return array{0:string,1:?string}
+     */
+    protected function splitFragment(string $path): array
+    {
+        $pos = strpos($path, '#');
+        return $pos === false ? [$path, null] : [substr($path, 0, $pos), substr($path, $pos + 1)];
+    }
+
+    protected function pickFragment($body, ?string $key)
+    {
+        if ($key === null || !is_array($body)) {
+            return $body;
+        }
+        return $body['data'][$key] ?? $body[$key] ?? [];
     }
 
     /* ------------------------------------------------------------------ */
@@ -59,18 +112,172 @@ class SourceClient
     /** Fetch one list ("Ongoing"/"Latest"/…) for a source -> normalized cards. */
     public function list(string $cat, string $src, string $path): array
     {
-        $body = $this->sanka->json($path, 300);
-        return $this->cards($body);
+        [$path, $frag] = $this->splitFragment($path);
+        $body = $this->sanka->json($this->at($this->source($cat, $src), $path), 300);
+        return $this->cards($this->pickFragment($body, $frag));
+    }
+
+    /**
+     * Seperti list(), tetapi ikut membawa keterangan paginasi dari hulu.
+     *
+     * Dibutuhkan karena tombol "halaman berikutnya" sebelumnya ditampilkan hanya
+     * berdasarkan "halaman ini ada isinya". Pada halaman terakhir mangasusuku
+     * (halaman 12, 2 item) tombolnya tetap muncul, lalu halaman 13 yang kosong
+     * ditampilkan sebagai "Sumber ini sedang tidak mengembalikan data" — menuduh
+     * sumber yang sehat, padahal katalognya memang habis.
+     *
+     * has_next null berarti hulu tidak memberi keterangan yang bisa dipegang;
+     * pemanggil boleh memakai dugaan lamanya.
+     */
+    public function listWithMeta(string $cat, string $src, string $path): array
+    {
+        [$path, $frag] = $this->splitFragment($path);
+        $body  = $this->sanka->json($this->at($this->source($cat, $src), $path), 300);
+        $items = $this->cards($this->pickFragment($body, $frag));
+
+        $pg = is_array($body) ? ($body['pagination'] ?? ($body['data']['pagination'] ?? null)) : null;
+        $hasNext = null;
+        if (is_array($pg)) {
+            foreach (['hasNextPage', 'has_next_page', 'hasNext'] as $k) {
+                if (array_key_exists($k, $pg)) {
+                    $hasNext = (bool) $pg[$k];
+                    break;
+                }
+            }
+            if ($hasNext === null && array_key_exists('nextPage', $pg)) {
+                $hasNext = !($pg['nextPage'] === null || $pg['nextPage'] === '');
+            }
+        }
+
+        // "Tidak ada halaman berikutnya" TIDAK dipercaya pada halaman yang penuh.
+        // Endpoint /latest dan /popular mangasusuku menjawab hasNextPage=false
+        // padahal isinya penuh 20 item; mempercayainya buta akan mematikan
+        // paginasi sumber yang sebenarnya masih punya data. Halaman pendek
+        // (kurang dari 10 item) barulah tanda halaman terakhir yang bisa dipegang.
+        if ($hasNext === false && count($items) >= 10) {
+            $hasNext = null;
+        }
+
+        return ['items' => $items, 'has_next' => $hasNext];
     }
 
     public function search(string $cat, string $src, string $q): array
     {
+        $this->lastSearchWasLocal = false; // Octane: instans bisa dipakai ulang antarpermintaan
         $s = $this->source($cat, $src);
         if (!$s || empty($s['search']) || trim($q) === '') {
             return [];
         }
-        $path = $this->tpl($s['search'], ['q' => rawurlencode($q)]);
-        return $this->cards($this->sanka->json($path, 120));
+        // Sumber yang pencarian hulunya diketahui rusak ('search_broken') langsung
+        // memakai pencarian lokal — tanpa menunggu hulu menggantung ±15 detik.
+        if (empty($s['search_broken'])) {
+            $path = $this->tpl($s['search'], ['q' => rawurlencode($q)]);
+            $body = $this->sanka->json($this->at($s, $path), 120);
+            $hits = $this->cards($body, !empty($s['id_from_title']));
+            // Ada hasil dari hulu: pakai. Kosong ATAU gagal: tetap tampilkan judul
+            // yang mirip dari daftar sumber ini, bukan halaman kosong.
+            // Sebagian hulu (Kiryuu, Maid) mengabaikan kata kunci dan selalu
+            // membalas daftar populer. Bila TIDAK satu pun hasil menyinggung kata
+            // kunci, anggap pencariannya rusak. (Satu yang cocok cukup: judul
+            // alternatif/terjemahan tetap lolos.)
+            $needle = $this->fold($q);
+            $words = array_values(array_filter(explode(' ', $needle), fn ($w) => mb_strlen($w) >= 2));
+            $relevant = $hits && collect($hits)->contains(fn ($h) => $this->titleScore($h['title'], $needle, $words) >= 35);
+            if ($relevant) {
+                return $hits;
+            }
+        }
+        return $this->localSearch($cat, $src, $q);
+    }
+
+    /**
+     * Seberapa cocok sebuah judul dengan kata kunci (0–100). 100 sama persis,
+     * 90 memuat frasa, 75 memuat semua kata, selebihnya ejaan mirip/sebagian.
+     * Ambang wajar: 35.
+     */
+    protected function titleScore(string $title, string $needle, array $words): int
+    {
+        $t = $this->fold($title);
+        if ($t === $needle) {
+            return 100;
+        }
+        if (str_contains($t, $needle)) {
+            return 90;
+        }
+        if ($words && count(array_filter($words, fn ($w) => str_contains($t, $w))) === count($words)) {
+            return 75;
+        }
+        // Ejaan mirip: kata kunci dibandingkan dengan tiap kata judul.
+        $best = 0;
+        foreach (explode(' ', $t) as $tw) {
+            foreach ($words ?: [$needle] as $w) {
+                // Hanya kata yang panjangnya sebanding: "over" vs "love" atau
+                // "leveling" vs "leaving" terlalu jauh untuk disebut mirip.
+                if (mb_strlen($tw) < 4 || mb_strlen($w) < 4 || abs(mb_strlen($tw) - mb_strlen($w)) > 2) {
+                    continue;
+                }
+                similar_text($w, $tw, $pct);
+                $best = max($best, $pct);
+            }
+        }
+        $partial = $words ? count(array_filter($words, fn ($w) => str_contains($t, $w))) / count($words) : 0;
+        return (int) max($best >= 85 ? $best * 0.6 : 0, $partial * 60);
+    }
+
+    /** Ditandai true oleh search() bila hasil terakhir berasal dari pencarian lokal. */
+    public bool $lastSearchWasLocal = false;
+
+    /**
+     * Pencarian cadangan: saring judul dari daftar-daftar sumber itu sendiri
+     * (beberapa halaman tiap daftar), diurutkan dari yang paling mirip.
+     *
+     * Dipakai ketika endpoint pencarian hulu rusak (BacaKomik: 500 setelah 16 dtk,
+     * Komikindo: 500). Tidak mencakup seluruh katalog — hanya yang tampil di daftar —
+     * tetapi jauh lebih berguna daripada "tidak ada data".
+     */
+    public function localSearch(string $cat, string $src, string $q): array
+    {
+        $this->lastSearchWasLocal = true;
+        $s = $this->source($cat, $src);
+        $needle = $this->fold($q);
+        if (!$s || $needle === '') {
+            return [];
+        }
+        $words = array_values(array_filter(explode(' ', $needle), fn ($w) => mb_strlen($w) >= 2));
+
+        $pool = [];
+        foreach ($s['lists'] ?? [] as $tpl) {
+            $pages = str_contains($tpl, '{p}') ? 3 : 1;
+            for ($p = 1; $p <= $pages; $p++) {
+                [$path, $frag] = $this->splitFragment(str_replace('{p}', (string) $p, $tpl));
+                $items = $this->cards($this->pickFragment($this->sanka->json($this->at($s, $path), 600), $frag));
+                if (!$items) {
+                    break;
+                }
+                foreach ($items as $it) {
+                    $pool[$it['id']] ??= $it;
+                }
+            }
+        }
+
+        $scored = [];
+        foreach ($pool as $it) {
+            $score = $this->titleScore($it['title'], $needle, $words);
+            if ($score >= 35) {
+                $scored[] = [$score, $it];
+            }
+        }
+        usort($scored, fn ($a, $b) => $b[0] <=> $a[0]);
+
+        return array_map(fn ($x) => $x[1], array_slice($scored, 0, 40));
+    }
+
+    /** Huruf kecil, tanpa tanda baca, spasi tunggal — untuk pencocokan judul. */
+    protected function fold(string $s): string
+    {
+        $s = mb_strtolower(html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        $s = (string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', $s);
+        return trim((string) preg_replace('/\s+/', ' ', $s));
     }
 
     public function detail(string $cat, string $src, string $id): ?array
@@ -79,15 +286,27 @@ class SourceClient
         if (!$s || empty($s['detail'])) {
             return null;
         }
-        $body = $this->sanka->json($this->tpl($s['detail'], ['id' => trim($id, '/')]), 600);
+        // Daftar "Terbaru" sebagian sumber berisi EPISODE, bukan judul (Anime Indo:
+        // "…-episode-12", Oploverz+: "…-episode-01-subtitle-indonesia"). Id judul
+        // didapat dengan membuang akhiran episodenya (pola per sumber: 'detail_strip').
+        $fetchId = trim($id, '/');
+        if (!empty($s['detail_strip'])) {
+            $fetchId = (string) preg_replace($s['detail_strip'], '', $fetchId) ?: $fetchId;
+        }
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['detail'], ['id' => $fetchId])), 600);
         if (!$body) {
             return null;
         }
-        $data = $this->normalizeDetail($body, $cat, $src, $id);
+        $data = $this->normalizeDetail($body, $cat, $src, $fetchId);
+        // Respons 200 yang ternyata kosong (tanpa judul dan episode) dianggap gagal,
+        // supaya pemanggil bisa jatuh ke cadangan (mis. langsung memutar episode).
+        if (($data['title'] ?? 'Detail') === 'Detail' && empty($data['episodes'])) {
+            return null;
+        }
         // Sources with a SEPARATE chapter-list endpoint (shinigami: detail has no
         // chapters) — fetch that list and populate the episodes.
         if (empty($data['episodes']) && !empty($s['chapters'])) {
-            $chBody = $this->sanka->json($this->tpl($s['chapters'], ['id' => trim($id, '/')]), 600);
+            $chBody = $this->sanka->json($this->at($s, $this->tpl($s['chapters'], ['id' => $fetchId])), 600);
             $data['episodes'] = $this->normalizeChapterList($chBody);
         }
         return $data;
@@ -99,7 +318,7 @@ class SourceClient
         if (!$s || empty($s['episode'])) {
             return null;
         }
-        $body = $this->sanka->json($this->tpl($s['episode'], ['id' => trim($id, '/')]), 600);
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['episode'], ['id' => trim($id, '/')])), 600);
         return $body ? $this->normalizeEpisode($body) : null;
     }
 
@@ -110,7 +329,7 @@ class SourceClient
         if (!$s || empty($s['chapter'])) {
             return null;
         }
-        $body = $this->sanka->json($this->tpl($s['chapter'], ['id' => trim($id, '/')]), 600);
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['chapter'], ['id' => trim($id, '/')])), 600);
         if (!$body) {
             return null;
         }
@@ -140,6 +359,17 @@ class SourceClient
         $clean = fn ($x) => (is_string($x) && $x !== '') ? trim(basename(rtrim($x, '/')), '/') : null;
         $prev = $clean($prevRaw);
         $next = $clean($nextRaw);
+
+        // Navigasi prev/next dari hulu memakai slug PENDEK di sumber 'manga_prefixed'
+        // (Mangakita: "chapter-1.41335"), padahal endpoint bacanya hanya menerima
+        // "{manga}-chapter-1". Tanpa ini, tombol "chapter berikutnya" berujung 404.
+        if (($s['chapter_id'] ?? '') === 'manga_prefixed') {
+            $mangaId = (string) preg_replace('/-chapter-.*$/i', '', trim($id, '/'));
+            if ($mangaId !== '' && $mangaId !== trim($id, '/')) {
+                $prev = $prev ? $this->normalizeChapterId($cat, $src, $mangaId, $prev) : null;
+                $next = $next ? $this->normalizeChapterId($cat, $src, $mangaId, $next) : null;
+            }
+        }
 
         // Some sources return BROKEN read-nav (mangasusuku: "#/prev/", "#/next/") or none.
         // Derive prev/next from the ordered chapter list in the detail — accurate, no
@@ -172,6 +402,80 @@ class SourceClient
      * "{manga}-chapter-N" id. Empty items[] if it can't resolve (e.g. UUID id, no ?m=).
      * @return array{mangaId:string,mangaTitle:string,items:array<int,array{id:string,label:string}>}
      */
+    /**
+     * Bentuk id chapter yang benar-benar diterima endpoint sumbernya.
+     *
+     * Sebagian sumber memberi slug PENDEK di daftar chapter (Kiryuu:
+     * "chapter-1.375182") padahal endpoint bacanya hanya menerima slug PENUH
+     * ("{manga}-chapter-1"). Akhiran ".375182" adalah id internal, bukan bagian
+     * dari slug.
+     *
+     * Diaktifkan per sumber lewat 'chapter_id' => 'manga_prefixed' di
+     * config/portal_sources.php, jadi sumber lain tidak tersentuh sama sekali.
+     */
+    protected function normalizeChapterId(string $cat, string $src, string $mangaId, string $rawId): string
+    {
+        $id = trim($rawId, '/');
+        $s  = $this->source($cat, $src);
+        if (($s['chapter_id'] ?? '') !== 'manga_prefixed' || $id === '' || $mangaId === '') {
+            return $id;
+        }
+        $id = (string) preg_replace('/\.\d+$/', '', $id);
+        return str_starts_with($id, $mangaId . '-') ? $id : $mangaId . '-' . $id;
+    }
+
+    /**
+     * Daftar episode untuk halaman tonton (dropdown, grid, Prev/Next).
+     * Urutan dinaikkan berdasarkan nomor episode bila setiap label bernomor;
+     * kalau tidak, urutan detail dipakai dan dibalik bila tampak terbaru-dulu.
+     * Mengembalikan ['seriesId','seriesTitle','items'=>[[id,label]],'prev','next'].
+     */
+    public function episodeNavFor(string $cat, string $src, string $epId, string $seriesId = ''): array
+    {
+        $out = ['seriesId' => '', 'seriesTitle' => '', 'items' => [], 'prev' => null, 'next' => null];
+        $seriesId = trim($seriesId, '/');
+        if ($seriesId === '') {
+            return $out;
+        }
+        $detail = $this->detail($cat, $src, $seriesId);
+        if (!$detail || empty($detail['episodes'])) {
+            return $out;
+        }
+        $items = array_values(array_filter(array_map(
+            fn ($e) => ['id' => trim((string) ($e['id'] ?? ''), '/'), 'label' => (string) ($e['label'] ?? 'Episode')],
+            $detail['episodes']
+        ), fn ($i) => $i['id'] !== ''));
+
+        $num = function (array $i): ?float {
+            // Nomor dari label ("Episode 12", "Eps 3.5"), cadangan dari id ("...-episode-12").
+            foreach ([$i['label'], $i['id']] as $t) {
+                if (preg_match('/(?:episode|eps?|ep)[\s._-]*(\d+(?:\.\d+)?)/i', $t, $m)) {
+                    return (float) $m[1];
+                }
+            }
+            return preg_match('/^\D*(\d+(?:\.\d+)?)\D*$/', $i['label'], $m) ? (float) $m[1] : null;
+        };
+        $nums = array_map($num, $items);
+        if (count($items) > 1 && !in_array(null, $nums, true)) {
+            array_multisort($nums, SORT_ASC, SORT_NUMERIC, $items);
+        } elseif (count($items) > 1 && $nums[0] !== null && end($nums) !== null && $nums[0] > end($nums)) {
+            $items = array_reverse($items);
+        }
+
+        $cur = trim($epId, '/');
+        foreach ($items as $i => $it) {
+            if ($it['id'] === $cur) {
+                $out['prev'] = $items[$i - 1]['id'] ?? null;
+                $out['next'] = $items[$i + 1]['id'] ?? null;
+                break;
+            }
+        }
+        $out['seriesId'] = $seriesId;
+        $out['seriesTitle'] = (string) ($detail['title'] ?? '');
+        $out['items'] = $items;
+        return $out;
+    }
+
     public function chapterListFor(string $cat, string $src, string $chapterId, string $mangaId = ''): array
     {
         $empty = ['mangaId' => '', 'mangaTitle' => '', 'items' => []];
@@ -188,8 +492,13 @@ class SourceClient
         if (!$detail) {
             return $empty;
         }
+        // Id dinormalisasi di SINI, di tempat daftar chapter dibentuk — karena
+        // daftar inilah yang mengisi dropdown chapter di halaman baca.
         $items = array_map(
-            fn ($e) => ['id' => trim((string) ($e['id'] ?? ''), '/'), 'label' => (string) ($e['label'] ?? 'Chapter')],
+            fn ($e) => [
+                'id'    => $this->normalizeChapterId($cat, $src, $mangaId, (string) ($e['id'] ?? '')),
+                'label' => (string) ($e['label'] ?? 'Chapter'),
+            ],
             $detail['episodes'] ?? []
         );
         return ['mangaId' => $mangaId, 'mangaTitle' => (string) ($detail['title'] ?? ''), 'items' => array_values(array_filter($items, fn ($i) => $i['id'] !== ''))];
@@ -230,7 +539,7 @@ class SourceClient
         if (!$s || empty($s['chapter'])) {
             return null;
         }
-        $body = $this->sanka->json($this->tpl($s['chapter'], ['id' => trim($id, '/')]), 600);
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['chapter'], ['id' => trim($id, '/')])), 600);
         if (!$body) {
             return null;
         }
@@ -321,7 +630,12 @@ class SourceClient
     }
 
     /** Body -> list of normalized cards ['id','title','poster','meta']. */
-    public function cards($body): array
+    /**
+     * @param bool $idFromTitle  Untuk hasil yang tidak membawa slug/link sama sekali
+     *                           (search mangasusuku): turunkan id dari judul —
+     *                           slug situs itu adalah Str::slug(judul).
+     */
+    public function cards($body, bool $idFromTitle = false): array
     {
         $list = $this->findList($body);
         if (!$list) {
@@ -332,24 +646,63 @@ class SourceClient
             if (!is_array($it)) {
                 continue;
             }
+            // Parser hulu yang rusak (MancoMix/komiku per Okt 2026) membalas satu
+            // kartu kosong {title:"Manga", slug:"", href:"/comic//"} untuk SEMUA
+            // pencarian; id-nya jatuh ke "comic" lalu 404. Buang kartu tanpa
+            // slug yang href-nya berujung segmen kosong.
+            if (array_key_exists('slug', $it) && trim((string) $it['slug']) === ''
+                && preg_match('#//$#', (string) ($it['href'] ?? ''))) {
+                continue;
+            }
             $id = $this->idOf($it);
+            if (!$id && $idFromTitle && !empty($it['title'])) {
+                $id = \Illuminate\Support\Str::slug((string) $it['title']);
+            }
             if (!$id) {
                 continue;
             }
             $out[] = [
                 'id'     => $id,
                 'title'  => (string) $this->pick($it, ['title', 'bookName', 'name'], 'Untitled'),
-                'poster' => (string) $this->pick($it, ['poster', 'thumbnail', 'image', 'cover', 'coverWap', 'coverUrl'], ''),
+                'poster' => (string) $this->pick($it, ['poster', 'thumbnail', 'image', 'imageSrc', 'cover', 'coverWap', 'coverUrl'], ''),
                 'meta'   => (string) $this->pick($it, ['episode', 'type', 'status', 'chapter', 'score', 'release_time'], ''),
+                'kind'   => $this->comicKind($it),
             ];
         }
         return $out;
+    }
+
+    /**
+     * Jenis komik dari data hulu: 'manga' | 'manhwa' | 'manhua' | null.
+     * Sumber menyebutnya lewat `type` (BacaKomik, Komikindo, Mangakita, MangaDex)
+     * atau negara asal `country_id`/`country` (Westmanga, Shinigami). MancoMix,
+     * Kiryuu dan Maid tidak menyebut apa pun → null (tidak ditebak).
+     */
+    protected function comicKind(array $it): ?string
+    {
+        $t = strtolower(trim((string) ($it['type'] ?? $it['comic_type'] ?? $it['format'] ?? '')));
+        foreach (['manhwa', 'manhua', 'manga'] as $k) {
+            if ($t !== '' && str_contains($t, $k)) {
+                return $k;
+            }
+        }
+        $c = strtoupper(trim((string) ($it['country_id'] ?? $it['country'] ?? '')));
+        return match ($c) {
+            'JP', 'JA', 'JPN', 'JAPAN' => 'manga',
+            'KR', 'KO', 'KOR', 'KOREA', 'SOUTH KOREA' => 'manhwa',
+            'CN', 'ZH', 'CHN', 'CHINA', 'ZH-HK' => 'manhua',
+            default => null,
+        };
     }
 
     protected function unwrap($body): array
     {
         // Otakudesu/samehadaku wrap payload in `data`; others are top-level.
         if (isset($body['data']) && is_array($body['data'])) {
+            // anime-api membungkus sekali lagi: {data: {details: {...}}}.
+            if (count($body['data']) === 1 && isset($body['data']['details']) && is_array($body['data']['details'])) {
+                return $body['data']['details'];
+            }
             return $body['data'];
         }
         if (isset($body['detail']) && is_array($body['detail'])) {
@@ -392,7 +745,7 @@ class SourceClient
         }
 
         // episode list
-        $rawEps = $this->pick($d, ['episodeList', 'episodes_list', 'episodes', 'chapters', 'chapterList'], []);
+        $rawEps = $this->pick($d, ['episodeList', 'episodes_list', 'episode_list', 'episodes', 'chapters', 'chapterList'], []);
         if (!is_array($rawEps) || !array_is_list($rawEps)) {
             $rawEps = $this->findList($d) ?: [];
         }
@@ -401,7 +754,11 @@ class SourceClient
             if (!is_array($e)) {
                 continue;
             }
-            $eid = $this->pick($e, ['episodeId', 'slug', 'chapterId', 'id'], '');
+            $eid = $this->pick($e, ['episodeId', 'slug', 'chapterId', 'id', 'eps_slug'], '');
+            if ($eid === '' && !empty($e['href'])) {
+                // Oploverz+ (anime-api) hanya memberi tautan halaman episodenya.
+                $eid = basename(rtrim((string) $e['href'], '/'));
+            }
             if ($eid === '') {
                 continue;
             }
@@ -414,7 +771,7 @@ class SourceClient
             if (isset($e['href']) && str_contains((string) $e['href'], '/genre')) {
                 continue;
             }
-            $label = $this->pick($e, ['title', 'episode', 'chapter', 'name'], '');
+            $label = $this->pick($e, ['title', 'episode', 'chapter', 'name', 'eps_title'], '');
             if ($label === '' && isset($e['eps'])) {
                 $label = 'Episode ' . $e['eps'];
             }
@@ -433,22 +790,48 @@ class SourceClient
                 $label = ucwords(str_replace(['-', '_'], ' ', $derived));
             }
             $episodes[] = [
-                'id'    => trim((string) $eid, '/'),
+                // Kiryuu: id mentah "chapter-2.153258" ditolak hulu (500); normalisasi
+                // yang sama dengan dropdown pembaca -> "magic-emperor-chapter-2".
+                'id'    => $this->normalizeChapterId($cat, $src, (string) $id, (string) $eid),
                 'label' => (string) ($label ?: 'Episode'),
                 'date'  => (string) $this->pick($e, ['date', 'released', 'time_ago'], ''),
             ];
         }
 
+        $episodes = $this->fixLeadingOutlier($episodes);
+
         return [
             'title'    => (string) $this->pick($d, ['title', 'bookName', 'name'], 'Detail'),
             'alt'      => (string) $this->pick($d, ['japanese', 'title_indonesian', 'alter_title', 'englishTitle'], ''),
-            'poster'   => (string) $this->pick($d, ['poster', 'coverWap', 'image', 'thumbnail', 'cover'], ''),
+            'poster'   => (string) $this->pick($d, ['poster', 'coverWap', 'image', 'imageSrc', 'thumbnail', 'cover'], ''),
             'synopsis' => (string) $syn,
             'genres'   => array_values(array_filter($genres)),
             'meta'     => $meta,
             'episodes' => $episodes,
             'id'       => $id,
         ];
+    }
+
+    /**
+     * Daftar chapter Kiryuu terurut terbaru-dulu, KECUALI chapter 1 yang nyasar ke
+     * urutan pertama ([1, 3862, 3861, …, 2]). Akibatnya chapter 1 tampil di atas
+     * sebagai "terbaru" dan navigasi turunan (prev/next) salah arah.
+     * Hanya memindahkan elemen pertama ke belakang bila jelas-jelas menyimpang;
+     * daftar yang sudah rapi tidak tersentuh.
+     */
+    protected function fixLeadingOutlier(array $eps): array
+    {
+        if (count($eps) < 3) {
+            return $eps;
+        }
+        $num = function ($e) {
+            return preg_match('/(\d+(?:\.\d+)?)/', (string) ($e['label'] ?? ''), $m) ? (float) $m[1] : null;
+        };
+        [$a, $b, $c] = [$num($eps[0]), $num($eps[1]), $num($eps[2])];
+        if ($a !== null && $b !== null && $c !== null && $a < $b && $b > $c && $a < $c) {
+            $eps[] = array_shift($eps);
+        }
+        return $eps;
     }
 
     /** Normalize a SEPARATE chapter-list response (e.g. shinigami) into episodes[]. */
@@ -555,7 +938,7 @@ class SourceClient
 
         // --- Generic: a servers/serverList/sources array of {name,url} ---
         if (!$servers) {
-            foreach (['servers', 'serverList', 'sources', 'stream', 'links'] as $key) {
+            foreach (['servers', 'serverList', 'sources', 'stream', 'streams', 'links'] as $key) {
                 $arr = $d[$key] ?? null;
                 if (is_array($arr) && array_is_list($arr)) {
                     foreach ($arr as $sv) {
@@ -585,6 +968,22 @@ class SourceClient
                     $links[] = ['name' => $u['title'] ?? 'Link', 'url' => $u['url'] ?? '#'];
                 }
                 $downloads[] = ['quality' => trim(($q['title'] ?? '') . ' ' . ($q['size'] ?? '')), 'links' => $links];
+            }
+        }
+        // anime-api (Oploverz+): download[{title: format, qualityList[{title, urlList[{title,url}]}]}]
+        if (!$downloads && is_array($d['download'] ?? null) && array_is_list($d['download'])) {
+            foreach ($d['download'] as $fmt) {
+                foreach ((array) ($fmt['qualityList'] ?? []) as $q) {
+                    $links = [];
+                    foreach ((array) ($q['urlList'] ?? []) as $u) {
+                        if (!empty($u['url'])) {
+                            $links[] = ['name' => $u['title'] ?? 'Link', 'url' => $u['url']];
+                        }
+                    }
+                    if ($links) {
+                        $downloads[] = ['quality' => trim(($fmt['title'] ?? '') . ' ' . ($q['title'] ?? '')), 'links' => $links];
+                    }
+                }
             }
         }
 

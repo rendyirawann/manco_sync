@@ -21,11 +21,25 @@ class NekopoiController extends Controller
         $q = trim((string) $r->query('q', ''));
         // Two clearly separated 18+ sub-sources: Mangasusuku (manga, reliable) +
         // Nekopoi (anime, flaky). Fetch both so the page is never blank.
+        // ?page= menggeser KEDUA bagian bersamaan (pencarian: satu halaman saja).
+        $page = $q !== '' ? 1 : max(1, (int) $r->query('page', 1));
         $manga = $q !== ''
             ? $this->client->search('comic18', 'mangasusuku', $q)
-            : $this->client->list('comic18', 'mangasusuku', '/comic/mangasusuku/list/1');
-        $neko = $q !== '' ? $this->neko->search($q) : $this->neko->latest();
-        return view('frontend.portal.dewasa.index', compact('manga', 'neko', 'q'));
+            : $this->client->list('comic18', 'mangasusuku', '/comic/mangasusuku/list/' . $page);
+        $neko = $q !== '' ? $this->neko->search($q) : $this->neko->latest($page);
+        $hh = $q !== ''
+            ? $this->client->search('anime18', 'hentaihaven', $q)
+            : $this->client->list('anime18', 'hentaihaven', '/hentaihaven/list?page=' . $page);
+        return view('frontend.portal.dewasa.index', compact('manga', 'neko', 'hh', 'q', 'page'));
+    }
+
+    /** Semua anime Nekopoi, terbaru dulu, per halaman (bukan hanya Random). */
+    public function all(Request $r)
+    {
+        $q = trim((string) $r->query('q', ''));
+        $page = $q !== '' ? 1 : max(1, (int) $r->query('page', 1));
+        $neko = $q !== '' ? $this->neko->search($q) : $this->neko->latest($page);
+        return view('frontend.portal.dewasa.nekopoi', compact('neko', 'q', 'page'));
     }
 
     public function detail(Request $r)

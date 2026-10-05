@@ -18,8 +18,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         // Paksa HTTPS di Production/VPS agar tidak terjadi Mixed Content
+        // Akar URL TIDAK dipaku ke APP_URL: aplikasi ini dilayani di subfolder
+        // (beoulve-dev.biz.id/manco-sync) dan di domain sendiri sekaligus, dan
+        // akarnya diambil dari permintaan (lihat trustProxies di bootstrap/app.php).
+        // Tanpa permintaan (antrean, jadwal, artisan) Laravel memakai APP_URL.
         if (config('app.env') === 'production') {
-            URL::forceRootUrl(config('app.url'));
             URL::forceScheme('https');
         }
 

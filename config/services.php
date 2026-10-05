@@ -56,6 +56,13 @@ return [
     | Live-proxied per request and cached in the app cache — nothing is imported to the DB.
     */
     'manco' => [
+        // Tautan sosial pemilik (navbar atas + footer). Kosong = ikon disembunyikan.
+        'social' => [
+            'linkedin'  => env('MANCO_SOCIAL_LINKEDIN', ''),
+            'github'    => env('MANCO_SOCIAL_GITHUB', ''),
+            'instagram' => env('MANCO_SOCIAL_INSTAGRAM', ''),
+            'tiktok'    => env('MANCO_SOCIAL_TIKTOK', ''),
+        ],
         // Sanka Vollerei — backs both anime (Otakudesu) and comic (Komiku). No key required.
         'sanka_base'  => env('SANKA_BASE', 'https://www.sankavollerei.web.id'),
         // Dracin / Anichin short-drama. Requires a paid X-API-Key from @Anichin_Premium_Bot.

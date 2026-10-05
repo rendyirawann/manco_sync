@@ -56,7 +56,7 @@
         </div>
 
         <div class="cy-section">
-            <h2 class="cy-section-title"><i class="fas fa-tv"></i> {{ $cat }} @if($total)<span style="font-size:.7rem;color:#6f93a3;font-family:Inter">({{ $total }} channel)</span>@endif</h2>
+            <h2 class="cy-section-title"><i class="fas fa-tv"></i> {{ $cat }} @if($total)<span style="font-size:.7rem;color:var(--p-dim);font-family:Inter">({{ $total }} channel)</span>@endif</h2>
             @if(count($items))
                 <div class="cy-grid wide">
                     @foreach($items as $ch)
