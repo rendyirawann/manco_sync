@@ -16,6 +16,14 @@
    berbeda, browser bisa melukis latar iframe putih saat embed menggambar ulang. */
 .cy-player,.cy-player iframe{background:#000;color-scheme:dark}
 body.cy-cinema{overflow:hidden;background:#000}
+/* Pemutar lebar (halaman film): lebih lebar dari kolom konten, tapi selalu muat
+   utuh di bawah header — lebar dibatasi oleh tinggi jendela (16:9). --cy-avail-h
+   diisi skrip dari tinggi jendela dikurangi header. */
+.cy-player.cy-player--wide{
+    --cy-pw:min(calc(100vw - 32px), calc(var(--cy-avail-h, calc(100vh - 160px)) * 16 / 9));
+    width:var(--cy-pw);max-width:none;
+    margin-left:calc(50% - var(--cy-pw) / 2);margin-right:0}
+body.cy-cinema .cy-player.cy-player--wide{margin-left:0!important}
 body.cy-cinema .cy-player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;height:100dvh!important;
     max-width:none!important;aspect-ratio:auto!important;margin:0!important;border:0!important;border-radius:0!important;z-index:2147483000!important;background:#000}
 body.cy-cinema .cy-player video{object-fit:contain}
@@ -28,7 +36,7 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
 </style>
 @endonce
 <button type="button" class="cy-cinema-exit" id="cy-cinema-exit" title="Keluar mode bioskop (Esc)"><i class="fas fa-xmark"></i> Keluar</button>
-<div class="cy-player" id="cy-player" data-type="{{ $streamType }}" data-src="{{ $streamUrl }}">
+<div @class(['cy-player', 'cy-player--wide' => $wide ?? false]) id="cy-player" data-type="{{ $streamType }}" data-src="{{ $streamUrl }}">
     @if($streamType === 'embed')
         <iframe id="cy-frame" src="{{ $streamUrl }}" allowfullscreen
                 allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
@@ -73,6 +81,27 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
     const exit = document.getElementById('cy-cinema-exit');
     const player = document.getElementById('cy-player');
     if (!btn || !player) return;
+    // Pemutar lebar: sisakan tinggi jendela di bawah header (sticky) + jarak kecil.
+    if (player.classList.contains('cy-player--wide')) {
+        const hdr = document.getElementById('site-header') || document.querySelector('.site-header');
+        const bottomNav = document.querySelector('.mobile-bottom-nav');
+        const fit = function(){
+            const used = (hdr ? hdr.offsetHeight : 0) + (bottomNav ? bottomNav.offsetHeight : 0);
+            // Tanpa header terukur (mis. layar pembuka masih menutupi halaman), pakai perkiraan aman.
+            const h = window.innerHeight - (used > 0 ? used : 130) - 28;
+            player.style.setProperty('--cy-avail-h', Math.max(200, h) + 'px');
+        };
+        fit();
+        window.addEventListener('resize', fit);
+        window.addEventListener('orientationchange', fit);
+        window.addEventListener('load', fit);
+        // Header berubah tinggi saat layar pembuka ditutup / menu dibuka.
+        if ('ResizeObserver' in window) {
+            const ro = new ResizeObserver(fit);
+            if (hdr) ro.observe(hdr);
+            if (bottomNav) ro.observe(bottomNav);
+        }
+    }
     // Induk dengan z-index sendiri (mis. .portal-wrap z=1) membatasi tumpukan
     // pemutar sehingga header situs tetap di atasnya. Saat bioskop, angkat
     // batas itu sementara, lalu kembalikan nilai aslinya saat keluar.

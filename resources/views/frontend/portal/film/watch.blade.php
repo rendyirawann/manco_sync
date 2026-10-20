@@ -57,7 +57,7 @@
             @if(!empty($current['embed']))
                 <p class="portal-sub" style="margin:0 0 .8rem">Server pihak ketiga — kalau tidak jalan atau muncul iklan, pilih server lain di bawah.</p>
             @endif
-            @include('frontend.portal.partials.player', ['streamUrl' => $current['url'], 'streamType' => !empty($current['embed']) ? 'embed' : 'video', 'subtitles' => $subtitles ?? []])
+            @include('frontend.portal.partials.player', ['streamUrl' => $current['url'], 'streamType' => !empty($current['embed']) ? 'embed' : 'video', 'subtitles' => $subtitles ?? [], 'wide' => true])
             @if(count($playable) > 1)
                 <div class="cy-servers">
                     <h2 class="cy-section-title"><i class="fas fa-server"></i> Server / Kualitas</h2>

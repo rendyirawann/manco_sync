@@ -123,6 +123,14 @@ return [
             'handler' => NullHandler::class,
         ],
 
+        // Octane mereset config tiap request, sehingga channel "deprecations" yang
+        // dibuat Laravel saat peringatan pertama hilang, lalu setiap peringatan
+        // berikutnya menghasilkan "Log [deprecations] is not defined". Didefinisikan
+        // tetap di sini; arahnya mengikuti LOG_DEPRECATIONS_CHANNEL (bawaan: buang).
+        'deprecations' => env('LOG_DEPRECATIONS_CHANNEL', 'null') === 'null'
+            ? ['driver' => 'monolog', 'handler' => NullHandler::class]
+            : ['driver' => 'stack', 'channels' => [env('LOG_DEPRECATIONS_CHANNEL')], 'ignore_exceptions' => false],
+
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
         ],
