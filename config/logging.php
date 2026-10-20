@@ -127,7 +127,8 @@ return [
         // dibuat Laravel saat peringatan pertama hilang, lalu setiap peringatan
         // berikutnya menghasilkan "Log [deprecations] is not defined". Didefinisikan
         // tetap di sini; arahnya mengikuti LOG_DEPRECATIONS_CHANNEL (bawaan: buang).
-        'deprecations' => env('LOG_DEPRECATIONS_CHANNEL', 'null') === 'null'
+        // env() mengubah teks "null" di .env menjadi PHP null, jadi cek keduanya.
+        'deprecations' => in_array(env('LOG_DEPRECATIONS_CHANNEL', 'null'), [null, 'null'], true)
             ? ['driver' => 'monolog', 'handler' => NullHandler::class]
             : ['driver' => 'stack', 'channels' => [env('LOG_DEPRECATIONS_CHANNEL')], 'ignore_exceptions' => false],
 
