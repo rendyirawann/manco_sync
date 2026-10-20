@@ -42,7 +42,7 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
                 allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                 referrerpolicy="no-referrer"></iframe>
     @else
-        <video id="cy-video" playsinline referrerpolicy="no-referrer">
+        <video id="cy-video" playsinline preload="auto" referrerpolicy="no-referrer">
             @foreach(($subtitles ?? []) as $i => $st)
                 <track kind="captions" label="{{ $st['label'] }}" srclang="{{ $st['lang'] }}" src="{{ $st['src'] }}" @if($i === 0) default @endif>
             @endforeach
@@ -192,7 +192,9 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
         // Buffer lebih panjang + kualitas dibatasi ukuran pemutar: mencegah putar-
         // berhenti-putar (spinner Plyr berkedip) pada host yang lambat.
         hlsInst = new Hls({
-            maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 30,
+            // Buffer maju sampai 5 menit (dibatasi 200 MB memori browser) agar
+            // gangguan jaringan singkat tidak membuat video tersendat.
+            maxBufferLength: 300, maxMaxBufferLength: 300, maxBufferSize: 200 * 1000 * 1000, backBufferLength: 30,
             capLevelToPlayerSize: true, abrEwmaDefaultEstimate: 1500000,
             fragLoadingMaxRetry: 4, manifestLoadingMaxRetry: 2,
         });
