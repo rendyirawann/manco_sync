@@ -180,9 +180,9 @@ exec 9>/tmp/portal-health.lock; flock -n 9 || exit 0
 run() { nice -n 15 ionice -c3 /usr/bin/php8.4 artisan portal:health "$@" >> "$APP/storage/logs/portal-health.log" 2>&1; }
 if [ -f "$APP/storage/app/portal-health.request" ]; then run --if-requested; exit 0; fi
 M=$(date +%-M); H=$(date +%-H)
-# Penuh sekali sehari, cepat tiap 3 jam (lihat §11 soal beban ke Sanka).
-if [ "$M" = 7 ] && [ "$H" = 4 ]; then run --full
-elif [ "$M" = 7 ] && [ $((H % 3)) = 0 ]; then run; fi
+# Sekali sehari saja, 04:07, mode cepat (lihat §11 soal beban ke sumber).
+# Pemeriksaan kapan saja: tombol "Cek & Perbaiki" (superadmin).
+if [ "$M" = 7 ] && [ "$H" = 4 ]; then run; fi
 ```
 
 ## 8. systemd
@@ -343,7 +343,7 @@ Lalu di browser: buka beranda, satu bab komik, satu film (cek subtitle Indonesia
 
 - Unban gratis lewat pengelola Sanka (https://t.me/OnlySankaaa). Sertakan domain dan IP server.
 - Saat menerima balasan "banned", `SankaClient` berhenti memanggil Sanka selama 1 jam (cache key `sanka-banned`) dan hanya menyajikan cache. Ini disengaja. **Jangan** mengakalinya dengan memaksa IPv4, proxy, atau IP lain: blokir berikutnya akan menyusul.
-- Agar tidak diblokir lagi: pemeriksa sumber dijadwalkan jarang (§7), isi bab di-cache 7 hari (cadangan 30 hari), detail judul segar 10 menit (cadangan 7 hari). Hindari uji beban atau skrip berulang ke Sanka.
+- Agar tidak diblokir lagi: pemeriksa sumber hanya sekali sehari (§7), isi bab di-cache 7 hari (cadangan 30 hari), detail judul segar 10 menit (cadangan 7 hari). Hindari uji beban atau skrip berulang ke Sanka.
 
 **Proxy gambar (`/portal/img`).**
 
