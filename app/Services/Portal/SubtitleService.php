@@ -70,7 +70,17 @@ class SubtitleService
      * are download_count-sorted, so the first per language is the most popular.
      * @return array<int,array{lang:string,label:string,file_id:int}>
      */
-    public function tracks(string $type, string $id, ?int $season = null, ?int $episode = null): array
+    /** Bahasa yang subtitlenya diperiksa kelengkapannya (pemirsa utama). */
+    protected const CHECKED_LANGS = ['id', 'en'];
+
+    /** Subtitle dianggap lengkap bila baris terakhirnya >= 80% durasi film. */
+    protected const MIN_COVERAGE = 0.8;
+
+    /**
+     * @param int $runtimeMin durasi film/episode (menit) dari TMDB; 0 = tidak diketahui,
+     *                        maka pilihan tetap yang paling banyak diunduh.
+     */
+    public function tracks(string $type, string $id, ?int $season = null, ?int $episode = null, int $runtimeMin = 0): array
     {
         if (!$this->hasKey()) {
             return [];
@@ -86,7 +96,7 @@ class SubtitleService
         } else {
             $q['tmdb_id'] = $id;
         }
-        $ck = 'ossearch:' . md5(json_encode($q));
+        $ck = 'ossearch2:' . md5(json_encode($q) . '|' . $runtimeMin);
         $cached = Cache::get($ck);
         if ($cached !== null) {
             return $cached;
@@ -96,18 +106,33 @@ class SubtitleService
             if (!$r->successful()) {
                 return [];
             }
-            $byLang = [];
+            // Kandidat per bahasa, urut download_count (terbanyak dulu). Subtitle
+            // berkas-ganda (CD1/CD2) dilewati: hanya CD1 yang bisa kita putar,
+            // sehingga sisanya hilang di pertengahan film.
+            $cands = [];
             foreach (($r->json('data') ?? []) as $it) {
                 $a    = $it['attributes'] ?? [];
                 $lang = strtolower((string) ($a['language'] ?? '')); // API returns e.g. "zh-CN"
-                $fid  = $a['files'][0]['file_id'] ?? null;
-                if ($lang === '' || !$fid || isset($byLang[$lang])) {
-                    continue; // first per language wins (already best by download_count)
+                $files = $a['files'] ?? [];
+                $fid  = $files[0]['file_id'] ?? null;
+                if ($lang === '' || !$fid || count($files) > 1) {
+                    continue;
+                }
+                if (count($cands[$lang] ?? []) < 4) {
+                    $cands[$lang][] = (int) $fid;
+                }
+            }
+
+            $byLang = [];
+            foreach ($cands as $lang => $fids) {
+                $pick = $fids[0];
+                if ($runtimeMin > 0 && in_array($lang, self::CHECKED_LANGS, true)) {
+                    $pick = $this->mostComplete($fids, $runtimeMin * 60);
                 }
                 $byLang[$lang] = [
                     'lang'    => $lang,
                     'label'   => self::LANGS[$lang] ?? strtoupper($lang),
-                    'file_id' => (int) $fid,
+                    'file_id' => $pick,
                 ];
             }
             // Indonesia & English first (this audience), then the rest A→Z by label.
@@ -118,7 +143,7 @@ class SubtitleService
                 $pb = $prio[$b['lang']] ?? 9;
                 return $pa === $pb ? strcmp($a['label'], $b['label']) : $pa <=> $pb;
             });
-            Cache::put($ck, $tracks, 3600);
+            Cache::put($ck, $tracks, 6 * 3600);
             return $tracks;
         } catch (\Throwable $e) {
             logger()->warning('OpenSubtitles search failed: ' . $e->getMessage());
@@ -148,7 +173,7 @@ class SubtitleService
                 return null;
             }
             $vtt = $this->srtToVtt($srt);
-            Cache::put($ck, $vtt, 86400); // quota is precious → cache a day
+            Cache::put($ck, $vtt, 30 * 86400); // berkas subtitle tidak berubah; kuota unduh terbatas
             return $vtt;
         } catch (\Throwable $e) {
             logger()->warning('OpenSubtitles download failed: ' . $e->getMessage());
@@ -156,12 +181,61 @@ class SubtitleService
         }
     }
 
+    /**
+     * Kandidat pertama yang mencakup >= 80% durasi; kalau tidak ada, yang
+     * paling lengkap. Cakupan tiap berkas diingat 30 hari supaya kuota unduh
+     * OpenSubtitles tidak habis untuk memeriksa ulang.
+     */
+    protected function mostComplete(array $fids, int $runtimeSec): int
+    {
+        $best = $fids[0];
+        $bestCov = -1.0;
+        foreach ($fids as $fid) {
+            $cov = Cache::get('oscov:' . $fid);
+            if ($cov === null) {
+                $vtt = $this->vtt((string) $fid);
+                if ($vtt === null) {
+                    continue; // gagal unduh (mis. kuota): jangan dicatat, coba lagi lain waktu
+                }
+                $cov = $this->lastCueSeconds($vtt) / max(1, $runtimeSec);
+                Cache::put('oscov:' . $fid, $cov, 30 * 86400);
+            }
+            if ($cov >= self::MIN_COVERAGE) {
+                return (int) $fid;
+            }
+            if ($cov > $bestCov) {
+                $best = $fid;
+                $bestCov = $cov;
+            }
+        }
+        return (int) $best;
+    }
+
+    /** Detik akhir baris subtitle terakhir. */
+    protected function lastCueSeconds(string $vtt): int
+    {
+        if (!preg_match_all('/(\d{1,2}):(\d{2}):(\d{2})\.\d{3}\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})/', $vtt, $m, PREG_SET_ORDER)) {
+            return 0;
+        }
+        $last = 0;
+        foreach ($m as $x) {
+            $last = max($last, (int) $x[4] * 3600 + (int) $x[5] * 60 + (int) $x[6]);
+        }
+        return $last;
+    }
+
     protected function srtToVtt(string $srt): string
     {
+        // Banyak .srt Indonesia lama berenkode Windows-1252; pemutar membuang
+        // baris yang bukan UTF-8 valid tanpa pesan apa pun.
+        if (!mb_check_encoding($srt, 'UTF-8')) {
+            $srt = mb_convert_encoding($srt, 'UTF-8', 'Windows-1252');
+        }
         $srt = preg_replace('/^\xEF\xBB\xBF/', '', $srt);   // strip BOM
-        $srt = str_replace("\r\n", "\n", $srt);
-        // SRT timestamps use comma; WebVTT uses dot.
-        $srt = preg_replace('/(\d{2}:\d{2}:\d{2}),(\d{3})/', '$1.$2', $srt);
+        $srt = str_replace(["\r\n", "\r"], "\n", $srt);
+        // SRT: koma, jam boleh 1 digit ("0:12:34,567"). WebVTT: titik, jam 2 digit.
+        $srt = preg_replace_callback('/(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/', fn ($m) =>
+            sprintf('%02d:%s:%s.%s', $m[1], $m[2], $m[3], str_pad($m[4], 3, '0')), $srt);
         return "WEBVTT\n\n" . $srt;
     }
 }

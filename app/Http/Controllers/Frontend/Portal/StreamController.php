@@ -27,6 +27,27 @@ class StreamController extends Controller
     }
 
     /**
+     * Sumber yang hulunya rusak dan dialihkan portal:health ke penggantinya
+     * (config 'fallback'): kembalikan redirect ke pengganti, atau null.
+     * ?asli=1 tetap membuka sumber aslinya (tidak ada yang disembunyikan).
+     */
+    protected function fallbackRedirect(string $category, string $src, Request $r, ?string $id = null)
+    {
+        $fb = \App\Services\Portal\SourceHealth::fallbackFor($category, $src);
+        if (!$fb || $r->boolean('asli') || !$this->client->source($category, $fb)) {
+            return null;
+        }
+        if ($id !== null && ($this->client->source($category, $src)['fallback_ids'] ?? true) === false) {
+            return null; // id judul berbeda antar sumber: detail tidak bisa dialihkan
+        }
+        $query = array_merge(\Illuminate\Support\Arr::except($r->query(), ['tab', 'page']), ['source' => $fb, 'dari' => $src]);
+        $url = $id === null
+            ? route('portal.stream.index', $category)
+            : route('portal.stream.detail', ['category' => $category, 'id' => $id]);
+        return redirect()->to($url . '?' . http_build_query($query));
+    }
+
+    /**
      * Adult categories (config `adult => true`) require a logged-in Superadmin.
      * Returns a redirect/abort response to short-circuit, or null to allow.
      * Mirrors the `superadmin` middleware (used for the dedicated /dewasa routes)
@@ -74,6 +95,9 @@ class StreamController extends Controller
             $q = trim((string) $r->query('q', ''));
             return view('frontend.portal.stream.all', compact('category', 'cat', 'q'));
         }
+        if ($resp = $this->fallbackRedirect($category, $src, $r)) {
+            return $resp;
+        }
         $srcConf = $this->client->source($category, $src);
         $q    = trim((string) $r->query('q', ''));
         $page = max(1, (int) $r->query('page', 1));
@@ -81,7 +105,8 @@ class StreamController extends Controller
         $lists = $srcConf['lists'] ?? [];
 
         // Show ONE list at a time (fast + paginated). Tabs switch lists; default = first list.
-        $active = ($tab !== '' && isset($lists[$tab])) ? $tab : (string) array_key_first($lists);
+        // Tanpa ?tab: tab pertama yang tidak tercatat kosong oleh portal:health (urutan tab tetap).
+        $active = ($tab !== '' && isset($lists[$tab])) ? $tab : \App\Services\Portal\SourceHealth::firstHealthyList($category, $src, $lists);
         $sections = [];
         if ($q !== '') {
             $hits = $this->client->search($category, $src, $q);
@@ -169,6 +194,9 @@ class StreamController extends Controller
         if ($resp = $this->adultGate($cat, $r)) {
             return $resp;
         }
+        if ($resp = $this->fallbackRedirect($category, $src, $r, $id)) {
+            return $resp;
+        }
         $data = $this->client->detail($category, $src, $id);
         // Kartu di daftar "Terbaru" sebagian sumber adalah EPISODE (Anoboy:
         // "…-episode-1-subtitle-indonesia") yang tidak punya halaman judul di hulu.
@@ -215,6 +243,30 @@ class StreamController extends Controller
             $ep['next'] = is_string($ep['next'] ?? null) ? $ep['next'] : null;
         }
         return view('frontend.portal.stream.watch', compact('category', 'cat', 'src', 'ep', 'id', 'nav'));
+    }
+
+    /**
+     * Baca lewat nomor chapter: /portal/{category}/baca/{judul}/{nomor}.
+     * Nomor bisa diganti langsung di address bar untuk lompat chapter.
+     */
+    public function readByNumber(string $category, string $manga, string $num, Request $r)
+    {
+        [$cat, $src] = $this->resolve($category, $r);
+        if ($resp = $this->adultGate($cat, $r)) {
+            return $resp;
+        }
+        $manga = trim($manga, '/');
+        $want  = \App\Services\Portal\SourceClient::normalizeNumber($num);
+        $list  = $this->client->chapterListFor($category, $src, '', $manga);
+        $id    = array_search($want, \App\Services\Portal\SourceClient::chapterNumberMap($list['items'] ?? []), true);
+
+        if ($id === false) {
+            return $this->gagal($category, $cat, $src, 'Chapter ' . $want . ' tidak ditemukan', $manga . '-chapter-' . $want, $manga,
+                route('portal.stream.detail', ['category' => $category, 'id' => $manga]) . '?source=' . $src);
+        }
+
+        $r->query->set('m', $manga);
+        return $this->read($category, (string) $id, $r);
     }
 
     public function read(string $category, string $id, Request $r)

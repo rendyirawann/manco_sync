@@ -79,6 +79,8 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::get('/hls', [PortalController::class, 'hls'])->name('hls');    // CORS/HLS playlist proxy
     Route::get('/seg', [PortalController::class, 'seg'])->name('seg');    // HLS segment proxy
     Route::get('/sub', [PortalController::class, 'sub'])->name('sub');    // OpenSubtitles -> WebVTT
+    // Alamat berakhiran .vtt untuk pemutar embed yang mengecek ekstensi (VidLink sub_file).
+    Route::get('/sub/{f}.vtt', fn (\Illuminate\Http\Request $r, \App\Services\Portal\SubtitleService $subs, string $f) => app(PortalController::class)->sub($r->merge(['f' => $f]), $subs))->where('f', '[0-9]+')->name('sub.vtt');
 
     // Live TV (iptv-org free-to-air / public channels incl. TVRI Sport for bola).
     Route::get('/tv',                      [LiveController::class, 'index'])->name('tv.index');
@@ -91,6 +93,11 @@ Route::prefix('portal')->name('portal.')->group(function () {
         Route::get('/dewasa/random', [NekopoiController::class, 'random'])->name('dewasa.random');
         Route::get('/dewasa/nekopoi', [NekopoiController::class, 'all'])->name('dewasa.nekopoi');
         Route::get('/dewasa/detail', [NekopoiController::class, 'detail'])->name('dewasa.detail');
+
+        // Kesehatan sumber: cek & perbaiki semua sumber (portal:health lewat watchdog cron).
+        Route::get('/kesehatan-sumber',         [\App\Http\Controllers\Frontend\Portal\HealthController::class, 'index'])->name('health.index');
+        Route::get('/kesehatan-sumber/status',  [\App\Http\Controllers\Frontend\Portal\HealthController::class, 'status'])->name('health.status');
+        Route::post('/kesehatan-sumber/cek',    [\App\Http\Controllers\Frontend\Portal\HealthController::class, 'run'])->name('health.run');
     });
 
     // Film & TV: TMDB metadata + self-hosted TMDB-Embed-API (own controller).
@@ -99,10 +106,12 @@ Route::prefix('portal')->name('portal.')->group(function () {
     Route::get('/film/{type}/{id}',        [FilmController::class, 'detail'])->name('film.detail')->where('type', 'movie|tv');
 
     // Unified Sanka multi-source categories. Source is chosen via ?source= .
-    $cats = 'anime|anime18|donghua|drama|comic|comic18|novel';
+    $cats = 'anime|anime18|donghua|drama|shortdrama|comic|comic18|novel';
     Route::get('/{category}',              [StreamController::class, 'index'])->name('stream.index')->where('category', $cats);
     Route::get('/{category}/watch/{id}',   [StreamController::class, 'watch'])->name('stream.watch')->where('category', $cats);
     Route::get('/{category}/read/{id}',    [StreamController::class, 'read'])->name('stream.read')->where('category', $cats);
+    Route::get('/{category}/baca/{manga}/{num}', [StreamController::class, 'readByNumber'])->name('stream.readnum')
+        ->where(['category' => $cats, 'num' => '[0-9]+(?:[.,][0-9]+)?']);
     Route::get('/{category}/server/{id}',  [StreamController::class, 'server'])->name('stream.server')->where('category', $cats);
     Route::get('/{category}/detail/{id}',  [StreamController::class, 'detail'])->name('stream.detail')->where('category', $cats);
     // Pencarian 'Semua Sumber': satu sumber per permintaan, dipanggil berurutan oleh halaman.

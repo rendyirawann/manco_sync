@@ -88,6 +88,39 @@ class TmdbClient
         return $this->cards($this->tmdb("/$type/top_rated", ['page' => $page]), $type);
     }
 
+    /** Film/serial buatan Indonesia (negara asal ID), terpopuler dulu. */
+    public function indonesian(string $type, int $page = 1): array
+    {
+        return $this->cards($this->tmdb("/discover/$type", [
+            'with_origin_country' => 'ID',
+            'sort_by'             => 'popularity.desc',
+            'include_adult'       => 'false',
+            'page'                => $page,
+        ]), $type);
+    }
+
+    /**
+     * Platform resmi di Indonesia tempat judul ini bisa ditonton (data TMDB/JustWatch).
+     *
+     * @return array{link: ?string, groups: array<string, array<int, array{name: string, logo: string}>>}
+     */
+    public function watchProviders(string $type, string $id): array
+    {
+        $d  = $this->tmdb("/$type/$id/watch/providers", [], 6 * 3600);
+        $reg = $d['results']['ID'] ?? [];
+        $labels = ['flatrate' => 'Langganan', 'free' => 'Gratis', 'ads' => 'Gratis (iklan)', 'rent' => 'Sewa', 'buy' => 'Beli'];
+        $groups = [];
+        foreach ($labels as $key => $label) {
+            foreach (($reg[$key] ?? []) as $p) {
+                $groups[$label][] = [
+                    'name' => (string) ($p['provider_name'] ?? ''),
+                    'logo' => !empty($p['logo_path']) ? 'https://image.tmdb.org/t/p/w92' . $p['logo_path'] : '',
+                ];
+            }
+        }
+        return ['link' => $reg['link'] ?? null, 'groups' => $groups];
+    }
+
     public function search(string $type, string $q, int $page = 1): array
     {
         if (trim($q) === '') {
@@ -120,6 +153,8 @@ class TmdbClient
             'id'       => $d['id'],
             'type'     => $type,
             'title'    => $d['title'] ?? $d['name'] ?? 'Detail',
+            // Menit; untuk serial pakai durasi episode. Dipakai memilih subtitle yang lengkap.
+            'runtime'  => (int) ($d['runtime'] ?? ($d['episode_run_time'][0] ?? 0)),
             'poster'   => !empty($d['poster_path']) ? $this->img . $d['poster_path'] : '',
             'overview' => $d['overview'] ?? '',
             'backdrop' => !empty($d['backdrop_path']) ? 'https://image.tmdb.org/t/p/w1280' . $d['backdrop_path'] : '',
@@ -157,10 +192,20 @@ class TmdbClient
         $url = $type === 'tv'
             ? "{$this->embed}/api/streams/series/{$id}?season=" . ($season ?? 1) . '&episode=' . ($episode ?? 1)
             : "{$this->embed}/api/streams/movie/{$id}";
+        // Penyedia di tmdb-embed-api bisa butuh puluhan detik; Octane memutus request
+        // di 30 dtk (dulu halaman jadi 500 kosong). Batas 12 dtk, hasil berisi di-cache.
+        $key = 'tmdb-streams:' . md5($url);
+        if (is_array($hit = \Illuminate\Support\Facades\Cache::get($key))) {
+            return $hit;
+        }
         try {
-            $r = Http::connectTimeout(2)->timeout(30)->get($url);
+            $r = Http::connectTimeout(2)->timeout(12)->get($url);
             if ($r->successful()) {
-                return $r->json('streams') ?? [];
+                $streams = $r->json('streams') ?? [];
+                if ($streams) {
+                    \Illuminate\Support\Facades\Cache::put($key, $streams, now()->addMinutes(20));
+                }
+                return $streams;
             }
         } catch (\Throwable $e) {
             logger()->warning('Embed-API failed: ' . $e->getMessage());
@@ -174,23 +219,34 @@ class TmdbClient
      * belum dipasang). Hanya penyedia yang terjangkau dari jaringan ID per
      * 4 Okt 2026; vidsrc.cc/.xyz, embed.su, moviesapi dan 111movies diblokir.
      */
-    public function embeds(string $type, string $id, ?int $season = null, ?int $episode = null): array
+    public function embeds(string $type, string $id, ?int $season = null, ?int $episode = null, ?string $subIdUrl = null): array
     {
         $s = $season ?? 1;
         $e = $episode ?? 1;
         $tv = $type === 'tv';
+        // $subIdUrl = URL .vtt Indonesia milik kita (route portal.sub, CORS *).
+        // Penyedia yang menerima subtitle eksternal memuatnya sebagai trek default,
+        // jadi teks benar-benar tampil (bukan sekadar menu subtitle yang kosong).
+        $q = fn (array $p) => '?' . http_build_query(array_filter($p, fn ($v) => $v !== null && $v !== ''));
+        $sub = $subIdUrl ? ['sub_file' => $subIdUrl, 'sub_label' => 'Indonesia'] : [];
         $list = [
-            'VidLink'    => $tv ? "https://vidlink.pro/tv/{$id}/{$s}/{$e}" : "https://vidlink.pro/movie/{$id}",
-            'Videasy'    => $tv ? "https://player.videasy.net/tv/{$id}/{$s}/{$e}" : "https://player.videasy.net/movie/{$id}",
-            'VidFast'    => $tv ? "https://vidfast.pro/tv/{$id}/{$s}/{$e}" : "https://vidfast.pro/movie/{$id}",
-            'VidSrc'     => $tv ? "https://vidsrc.to/embed/tv/{$id}/{$s}/{$e}" : "https://vidsrc.to/embed/movie/{$id}",
-            '2Embed'     => $tv ? "https://www.2embed.cc/embedtv/{$id}&s={$s}&e={$e}" : "https://www.2embed.cc/embed/{$id}",
-            'MultiEmbed' => $tv ? "https://multiembed.mov/?video_id={$id}&tmdb=1&s={$s}&e={$e}" : "https://multiembed.mov/?video_id={$id}&tmdb=1",
-            'AutoEmbed'  => $tv ? "https://autoembed.co/tv/tmdb/{$id}-{$s}-{$e}" : "https://autoembed.co/movie/tmdb/{$id}",
+            // vidsrc.sh (keluarga vidsrc.me): ds_lang=id memilih sub Indonesia bawaan,
+            // sub_url menambah file kita sebagai trek yang langsung aktif.
+            ['VidSrc.sh (Sub Indo)', ($tv ? "https://vidsrc.sh/embed/tv/{$id}/{$s}/{$e}" : "https://vidsrc.sh/embed/movie/{$id}")
+                . $q(['ds_lang' => 'id', 'sub_url' => $subIdUrl, 'sub_label' => $subIdUrl ? 'Indonesia' : null, 'sub_lang' => $subIdUrl ? 'id' : null]), 'id'],
+            ['VidLink' . ($sub ? ' (Sub Indo)' : ''), ($tv ? "https://vidlink.pro/tv/{$id}/{$s}/{$e}" : "https://vidlink.pro/movie/{$id}") . ($sub ? $q($sub) : ''), $sub ? 'id' : null],
+            ['VidSrc' . ($sub ? ' (Sub Indo)' : ''), ($tv ? "https://vidsrc.to/embed/tv/{$id}/{$s}/{$e}" : "https://vidsrc.to/embed/movie/{$id}") . ($sub ? $q($sub) : ''), $sub ? 'id' : null],
+            ['Videasy', $tv ? "https://player.videasy.net/tv/{$id}/{$s}/{$e}" : "https://player.videasy.net/movie/{$id}", null],
+            ['VidFast', $tv ? "https://vidfast.pro/tv/{$id}/{$s}/{$e}" : "https://vidfast.pro/movie/{$id}", null],
+            ['2Embed', $tv ? "https://www.2embed.cc/embedtv/{$id}&s={$s}&e={$e}" : "https://www.2embed.cc/embed/{$id}", null],
+            ['MultiEmbed', $tv ? "https://multiembed.mov/?video_id={$id}&tmdb=1&s={$s}&e={$e}" : "https://multiembed.mov/?video_id={$id}&tmdb=1", null],
+            ['AutoEmbed', $tv ? "https://autoembed.co/tv/tmdb/{$id}-{$s}-{$e}" : "https://autoembed.co/movie/tmdb/{$id}", null],
         ];
         $out = [];
-        foreach ($list as $name => $url) {
-            $out[] = ['name' => $name, 'url' => $url, 'embed' => true];
+        foreach ($list as [$name, $url, $lang]) {
+            $row = ['name' => $name, 'url' => $url, 'embed' => true];
+            if ($lang) $row['lang'] = $lang;
+            $out[] = $row;
         }
         return $out;
     }

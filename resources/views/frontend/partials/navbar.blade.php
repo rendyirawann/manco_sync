@@ -16,6 +16,9 @@
             </div>
             <div class="topbar-right">
                 @auth
+                    @if(auth()->user()->hasRole(['Superadmin', 'superadmin']))
+                        <a href="{{ route('portal.health.index') }}" class="topbar-link" title="Cek &amp; perbaiki semua sumber portal"><i class="fas fa-heart-pulse"></i> Cek Sumber</a>
+                    @endif
                     <form method="POST" action="{{ route('portal.logout') }}" style="display:inline">
                         @csrf
                         <button type="submit" class="topbar-link" style="background:none;border:none;cursor:pointer;font:inherit"><i class="fas fa-right-from-bracket"></i> Keluar</button>
@@ -39,6 +42,7 @@
                     <li><a href="{{ route('portal.stream.index', 'comic') }}"><i class="fas fa-book-open"></i> Manga &amp; Manhwa</a></li>
                     <li><a href="{{ route('portal.stream.index', 'novel') }}"><i class="fas fa-feather-pointed"></i> Novel</a></li>
                     <li><a href="{{ route('portal.stream.index', 'drama') }}"><i class="fas fa-clapperboard"></i> Drama</a></li>
+                    <li><a href="{{ route('portal.stream.index', 'shortdrama') }}"><i class="fas fa-mobile-screen"></i> Video AI</a></li>
                     <li><a href="{{ route('portal.film.index') }}" class="{{ request()->routeIs('portal.film.*') ? 'active' : '' }}"><i class="fas fa-film"></i> Film</a></li>
                 </ul>
             </div>

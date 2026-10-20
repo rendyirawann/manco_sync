@@ -24,13 +24,17 @@ class SourceClient
 
     public function categories(): array
     {
-        return array_map(fn ($c) => $this->withoutDisabled($c), config('portal_sources', []));
+        $out = [];
+        foreach (config('portal_sources', []) as $key => $c) {
+            $out[$key] = $this->withoutDisabled($c, $key);
+        }
+        return $out;
     }
 
     public function category(string $cat): ?array
     {
         $c = config("portal_sources.$cat");
-        return $c ? $this->withoutDisabled($c) : null;
+        return $c ? $this->withoutDisabled($c, $cat) : null;
     }
 
     /**
@@ -38,9 +42,17 @@ class SourceClient
      * tetapi konfigurasinya tetap utuh di config/portal_sources.php — cukup hapus
      * tandanya bila hulunya pulih.
      */
-    protected function withoutDisabled(array $cat): array
+    protected function withoutDisabled(array $cat, string $key = ''): array
     {
-        $cat['sources'] = array_filter($cat['sources'] ?? [], fn ($s) => empty($s['disabled']));
+        // Sumber 'disabled' yang oleh pemeriksa kesehatan (portal:health) terbukti
+        // pulih — daftar & detail berisi dua kali berturut-turut — tampil lagi
+        // otomatis tanpa mengubah config.
+        $revived = $key !== '' ? SourceHealth::revived() : [];
+        $cat['sources'] = array_filter(
+            $cat['sources'] ?? [],
+            fn ($s, $src) => empty($s['disabled']) || isset($revived["$key:$src"]),
+            ARRAY_FILTER_USE_BOTH
+        );
         return $cat;
     }
 
@@ -49,10 +61,65 @@ class SourceClient
         return config("portal_sources.$cat.sources.$src");
     }
 
-    /** First source key of a category (default selection). */
+    /**
+     * Sumber bawaan kategori: yang pertama, KECUALI pemeriksa kesehatan mencatatnya
+     * sedang mati — maka sumber sehat berikutnya yang dibuka lebih dulu. Tidak ada
+     * sumber yang disembunyikan; hanya urutan pilihan bawaannya.
+     */
     public function defaultSource(string $cat): ?string
     {
-        return array_key_first($this->category($cat)['sources'] ?? []) ?: null;
+        $keys = array_keys($this->category($cat)['sources'] ?? []);
+        $down = SourceHealth::down();
+        foreach ($keys as $k) {
+            if (!isset($down["$cat:$k"])) {
+                return $k;
+            }
+        }
+        return $keys[0] ?? null;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Pemeriksaan kesehatan (dipakai SourceHealth)                        */
+    /* ------------------------------------------------------------------ */
+
+    /** Uji satu daftar langsung ke hulu (tanpa cache) → kartu, atau null bila hulu gagal. */
+    public function probeList(string $cat, string $src, string $path): ?array
+    {
+        [$path, $frag] = $this->splitFragment($path);
+        $body = $this->sanka->probe($this->at($this->source($cat, $src), $path));
+        return $body === null ? null : $this->cards($this->pickFragment($body, $frag));
+    }
+
+    /** Uji detail satu judul langsung ke hulu → detail ternormalisasi, atau null. */
+    public function probeDetail(string $cat, string $src, string $id): ?array
+    {
+        $s = $this->source($cat, $src);
+        if (!$s || empty($s['detail'])) {
+            return null;
+        }
+        $fetchId = trim($id, '/');
+        if (!empty($s['detail_strip'])) {
+            $fetchId = (string) preg_replace($s['detail_strip'], '', $fetchId) ?: $fetchId;
+        }
+        $body = $this->sanka->probe($this->at($s, $this->tpl($s['detail'], ['id' => $fetchId])), 600);
+        if (!$body) {
+            return null;
+        }
+        $data = $this->normalizeDetail($body, $cat, $src, $fetchId);
+        if (($data['title'] ?? 'Detail') === 'Detail' && empty($data['episodes'])) {
+            return null;
+        }
+        if (empty($data['episodes']) && !empty($s['chapters'])) {
+            $chBody = $this->sanka->probe($this->at($s, $this->tpl($s['chapters'], ['id' => $fetchId])), 600);
+            $data['episodes'] = $this->normalizeChapterList($chBody);
+        }
+        return $data;
+    }
+
+    /** Alamat lengkap path sumber (absolut untuk sumber ber-'base'). */
+    public function urlFor(string $cat, string $src, string $path): string
+    {
+        return $this->at($this->source($cat, $src), $path);
     }
 
     protected function tpl(string $template, array $vars): string
@@ -186,6 +253,27 @@ class SourceClient
             if ($relevant) {
                 return $hits;
             }
+
+            // Salah ketik ("one pice"): hulu tak menemukan apa-apa. Coba SEKALI lagi dengan
+            // kata terpanjang dari kata kunci, lalu saring yang judulnya mirip. Hanya satu
+            // permintaan tambahan — Sanka memblokir IP yang meminta beruntun cepat.
+            // Maks. 2 kata terpanjang (kata terpanjang bisa jadi justru yang salah ketik).
+            $tries = count($words) > 1
+                ? collect($words)->filter(fn ($w) => mb_strlen($w) >= 3)->sortByDesc(fn ($w) => mb_strlen($w))->take(2)->values()->all()
+                : [];
+            foreach ($tries as $longest) {
+                $retry = $this->cards($this->sanka->json($this->at($s, $this->tpl($s['search'], ['q' => rawurlencode($longest)])), 120),
+                    !empty($s['id_from_title']));
+                $similar = collect($retry)
+                    ->map(fn ($h) => $h + ['_score' => $this->titleScore($h['title'], $needle, $words)])
+                    ->filter(fn ($h) => $h['_score'] >= 35)
+                    ->sortByDesc('_score')->map(fn ($h) => \Illuminate\Support\Arr::except($h, '_score'))->values()->all();
+                if ($similar) {
+                    $this->lastSearchWasLocal = true; // "judul mirip", bukan hasil persis
+                    $local = $this->localSearch($cat, $src, $q);
+                    return collect($similar)->concat($local)->unique('id')->take(40)->values()->all();
+                }
+            }
         }
         return $this->localSearch($cat, $src, $q);
     }
@@ -293,7 +381,7 @@ class SourceClient
         if (!empty($s['detail_strip'])) {
             $fetchId = (string) preg_replace($s['detail_strip'], '', $fetchId) ?: $fetchId;
         }
-        $body = $this->sanka->json($this->at($s, $this->tpl($s['detail'], ['id' => $fetchId])), 600);
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['detail'], ['id' => $fetchId])), 600, 7 * 86400);
         if (!$body) {
             return null;
         }
@@ -306,7 +394,7 @@ class SourceClient
         // Sources with a SEPARATE chapter-list endpoint (shinigami: detail has no
         // chapters) — fetch that list and populate the episodes.
         if (empty($data['episodes']) && !empty($s['chapters'])) {
-            $chBody = $this->sanka->json($this->at($s, $this->tpl($s['chapters'], ['id' => $fetchId])), 600);
+            $chBody = $this->sanka->json($this->at($s, $this->tpl($s['chapters'], ['id' => $fetchId])), 600, 7 * 86400);
             $data['episodes'] = $this->normalizeChapterList($chBody);
         }
         return $data;
@@ -329,7 +417,7 @@ class SourceClient
         if (!$s || empty($s['chapter'])) {
             return null;
         }
-        $body = $this->sanka->json($this->at($s, $this->tpl($s['chapter'], ['id' => trim($id, '/')])), 600);
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['chapter'], ['id' => trim($id, '/')])), 7 * 86400, 30 * 86400);
         if (!$body) {
             return null;
         }
@@ -476,6 +564,50 @@ class SourceClient
         return $out;
     }
 
+    /**
+     * Nomor chapter dari label ("Chapter 46.5") atau id ("judul-chapter-46-end").
+     * Dipakai untuk URL baca bernomor (/baca/{judul}/{nomor}). null = tak dikenali.
+     */
+    public static function chapterNumber(string $label, string $id = ''): ?string
+    {
+        foreach ([$label, str_replace(['-', '_'], ' ', $id)] as $t) {
+            if (preg_match('/(?:chapter|chap|ch|bab|episode|ep)\.?\s*(\d+(?:[.,]\d+)?)/i', $t, $m)) {
+                return self::normalizeNumber($m[1]);
+            }
+        }
+        return null;
+    }
+
+    /** "046" → "46", "12,50" → "12.5". */
+    public static function normalizeNumber(string $n): string
+    {
+        $n = str_replace(',', '.', trim($n));
+        return str_contains($n, '.') ? (string) (float) $n : (string) (int) $n;
+    }
+
+    /**
+     * Peta id chapter → nomor, hanya untuk nomor yang unik di daftar ini
+     * (dua chapter bernomor sama tidak bisa dibedakan lewat URL).
+     *
+     * @param array<int, array{id: string, label: string}> $items
+     * @return array<string, string>
+     */
+    public static function chapterNumberMap(array $items): array
+    {
+        $byId = [];
+        $count = [];
+        foreach ($items as $it) {
+            $id = trim((string) ($it['id'] ?? ''), '/');
+            $n = self::chapterNumber((string) ($it['label'] ?? ''), $id);
+            if ($id === '' || $n === null) {
+                continue;
+            }
+            $byId[$id] = $n;
+            $count[$n] = ($count[$n] ?? 0) + 1;
+        }
+        return array_filter($byId, fn ($n) => $count[$n] === 1);
+    }
+
     public function chapterListFor(string $cat, string $src, string $chapterId, string $mangaId = ''): array
     {
         $empty = ['mangaId' => '', 'mangaTitle' => '', 'items' => []];
@@ -539,7 +671,7 @@ class SourceClient
         if (!$s || empty($s['chapter'])) {
             return null;
         }
-        $body = $this->sanka->json($this->at($s, $this->tpl($s['chapter'], ['id' => trim($id, '/')])), 600);
+        $body = $this->sanka->json($this->at($s, $this->tpl($s['chapter'], ['id' => trim($id, '/')])), 7 * 86400, 30 * 86400);
         if (!$body) {
             return null;
         }
@@ -799,6 +931,20 @@ class SourceClient
         }
 
         $episodes = $this->fixLeadingOutlier($episodes);
+
+        // Video (anime/donghua/drama): terbaru di atas. Sebagian sumber (Anime Indo)
+        // mengirim urutan naik "Episode 000 … 1180" sehingga episode terbaru ada di
+        // dasar daftar dan tampak "tidak update".
+        // Kategori ber-'episode_order' => 'asc' (drama pendek Video AI: ditonton dari episode 1) tidak dibalik.
+        if (($this->category($cat)['kind'] ?? '') === 'video' && ($this->category($cat)['episode_order'] ?? 'desc') !== 'asc' && count($episodes) > 1) {
+            $num = fn ($e) => preg_match('/(?:episode|eps?|ep)[\s._-]*(\d+(?:\.\d+)?)/i', $e['label'] . ' ' . $e['id'], $m)
+                ? (float) $m[1] : (preg_match('/(\d+(?:\.\d+)?)\D*$/', $e['label'], $m) ? (float) $m[1] : null);
+            $first = $num($episodes[0]);
+            $last = $num($episodes[count($episodes) - 1]);
+            if ($first !== null && $last !== null && $first < $last) {
+                $episodes = array_reverse($episodes);
+            }
+        }
 
         return [
             'title'    => (string) $this->pick($d, ['title', 'bookName', 'name'], 'Detail'),

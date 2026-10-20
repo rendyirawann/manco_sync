@@ -7,6 +7,14 @@
         <div class="portal-crumb">
             <a href="{{ route('portal.hub') }}">Portal</a> <i class="fas fa-chevron-right"></i> <span>{{ $cat['label'] }}</span>
         </div>
+        @php $dari = (string) request('dari', ''); $dariConf = $dari !== '' ? ($cat['sources'][$dari] ?? null) : null; @endphp
+        @if($dariConf)
+            {{-- Dialihkan oleh portal:health karena hulu sumber asli rusak (config 'fallback'). --}}
+            <div class="cy-fallback-note"><i class="fas fa-route"></i>
+                Sumber <strong>{{ $dariConf['label'] }}</strong> sedang rusak di situs aslinya — ditampilkan dari <strong>{{ $cat['sources'][$src]['label'] ?? $src }}</strong>.
+                <a href="{{ request()->url() }}?source={{ $dari }}&asli=1">Tetap buka {{ $dariConf['label'] }}</a>
+            </div>
+        @endif
 
         <div class="portal-hero">
             <p class="portal-kicker">// {{ strtoupper($srcConf['label'] ?? $src) }}</p>

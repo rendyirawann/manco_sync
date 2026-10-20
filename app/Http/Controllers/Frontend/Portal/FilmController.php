@@ -33,6 +33,7 @@ class FilmController extends Controller
             $items = match ($tab) {
                 'Trending'  => $this->tmdb->trending($type, $page),
                 'Top Rated' => $this->tmdb->topRated($type, $page),
+                'Indonesia' => $this->tmdb->indonesian($type, $page),
                 default     => $this->tmdb->popular($type, $page),
             };
         }
@@ -53,7 +54,9 @@ class FilmController extends Controller
         $season = max(1, (int) $r->query('season', 1));
         $episodes = $type === 'tv' ? $this->tmdb->tvEpisodes($id, $season) : [];
 
-        return view('frontend.portal.film.detail', compact('type', 'id', 'data', 'season', 'episodes'));
+        $providers = $this->tmdb->watchProviders($type, $id);
+
+        return view('frontend.portal.film.detail', compact('type', 'id', 'data', 'season', 'episodes', 'providers'));
     }
 
     public function watch(string $type, string $id, Request $r)
@@ -68,6 +71,11 @@ class FilmController extends Controller
         $playable = [];
         $downloads = [];
         foreach ($this->tmdb->streams($type, $id, $season, $episode) as $s) {
+            // Penyedia yang tak bisa diputar langsung di browser (butuh header Referer/Origin
+            // yang tak bisa dikirim browser, atau sering 429) tidak ditampilkan.
+            if (in_array(strtolower((string) ($s['provider'] ?? '')), ['netmirror', 'onetouchtv'], true)) {
+                continue;
+            }
             $u = strtolower((string) ($s['url'] ?? ''));
             if ($u === '') {
                 continue;
@@ -86,16 +94,28 @@ class FilmController extends Controller
             }
         }
         // HLS first (works cross-browser via hls.js), then MP4.
-        usort($playable, fn ($a, $b) => (int) ($b['hls'] ?? false) <=> (int) ($a['hls'] ?? false));
-        // Server iframe (TMDB ID) selalu tersedia di belakang stream langsung.
-        $playable = array_merge($playable, $this->tmdb->embeds($type, $id, $season, $episode));
-
+        // Urutan: audio English dulu (paling cocok dengan subtitle Indonesia), lalu HLS
+        // (kualitas adaptif) sebelum mp4, lalu kualitas tertinggi.
+        $rank = function ($x) {
+            $n = strtolower((string) ($x['name'] ?? ''));
+            $lang = str_contains($n, '[english]') || !str_contains($n, '[') ? 0 : 1;
+            $q = (int) preg_replace('/\D/', '', (string) ($x['quality'] ?? '0'));
+            return [$lang, ($x['hls'] ?? false) ? 0 : 1, -$q];
+        };
+        usort($playable, fn ($a, $b) => $rank($a) <=> $rank($b));
         // Subtitles (OpenSubtitles) → WebVTT track URLs. tracks() already orders
         // them Indonesia/English first, so the first <track> is the default and
         // matches the player's captions.language = 'id'.
         $subtitles = array_map(fn ($t) => [
             'label' => $t['label'], 'lang' => $t['lang'], 'src' => route('portal.sub', ['f' => $t['file_id']]),
-        ], $this->subs->tracks($type, $id, $season, $episode));
+        ], $this->subs->tracks($type, $id, $season, $episode, (int) ($data['runtime'] ?? 0)));
+
+        // Server iframe (TMDB ID) selalu tersedia di belakang stream langsung.
+        // Sub Indonesia kita (CORS *) diteruskan ke penyedia yang menerima file eksternal.
+        // Untuk pemutar embed: alamat berakhiran .vtt (sebagian pemutar mengecek ekstensi).
+        $idTrack = collect($this->subs->tracks($type, $id, $season, $episode, (int) ($data['runtime'] ?? 0)))->firstWhere('lang', 'id');
+        $idSub = $idTrack ? route('portal.sub.vtt', ['f' => $idTrack['file_id']]) : null;
+        $playable = array_merge($playable, $this->tmdb->embeds($type, $id, $season, $episode, $idSub));
 
         return view('frontend.portal.film.watch', [
             'type' => $type, 'id' => $id, 'data' => $data,

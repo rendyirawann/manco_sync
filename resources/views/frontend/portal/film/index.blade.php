@@ -31,7 +31,7 @@
         @else
             @if($q === '')
                 <div class="cy-tabs">
-                    @foreach(['Populer', 'Trending', 'Top Rated'] as $t)
+                    @foreach(['Populer', 'Trending', 'Top Rated', 'Indonesia'] as $t)
                         <a class="cy-tab {{ $tab === $t ? 'active' : '' }}" href="{{ route('portal.film.index') }}?type={{ $type }}&tab={{ urlencode($t) }}">{{ $t }}</a>
                     @endforeach
                 </div>

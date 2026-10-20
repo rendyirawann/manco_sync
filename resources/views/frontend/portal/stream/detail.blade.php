@@ -4,6 +4,7 @@
 @php
     $isRead  = in_array($cat['kind'] ?? 'video', ['read', 'text'], true);
     $epRoute = $isRead ? 'portal.stream.read' : 'portal.stream.watch';
+    $epNums  = $isRead ? \App\Services\Portal\SourceClient::chapterNumberMap(array_map(fn ($e) => ['id' => (string) ($e['id'] ?? ''), 'label' => (string) ($e['label'] ?? '')], $data['episodes'] ?? [])) : [];
 @endphp
 
 @section('content')
@@ -14,6 +15,14 @@
             <a href="{{ route('portal.stream.index', $category) }}?source={{ $src }}">{{ $cat['label'] }}</a>
             <i class="fas fa-chevron-right"></i> <span>{{ $data['title'] }}</span>
         </div>
+        @php $dari = (string) request('dari', ''); $dariConf = $dari !== '' ? ($cat['sources'][$dari] ?? null) : null; @endphp
+        @if($dariConf)
+            {{-- Dialihkan oleh portal:health karena hulu sumber asli rusak (config 'fallback'). --}}
+            <div class="cy-fallback-note"><i class="fas fa-route"></i>
+                Sumber <strong>{{ $dariConf['label'] }}</strong> sedang rusak di situs aslinya — ditampilkan dari <strong>{{ $cat['sources'][$src]['label'] ?? $src }}</strong>.
+                <a href="{{ request()->url() }}?source={{ $dari }}&asli=1">Tetap buka {{ $dariConf['label'] }}</a>
+            </div>
+        @endif
 
         <div class="cy-detail">
             <div class="cy-detail-poster" data-judul="{{ $data['title'] }}">
@@ -52,7 +61,10 @@
                     @if(count($data['episodes']))
                         <div class="cy-eplist">
                             @foreach($data['episodes'] as $e)
-                                <a href="{{ route($epRoute, ['category' => $category, 'id' => $e['id']]) . '?source=' . $src . '&m=' . urlencode($id) }}" class="cy-ep">
+                                @php $epNum = $isRead ? ($epNums[trim((string) $e['id'], '/')] ?? null) : null; @endphp
+                                <a href="{{ $epNum !== null
+                                        ? route('portal.stream.readnum', ['category' => $category, 'manga' => trim($id, '/'), 'num' => $epNum]) . '?source=' . $src
+                                        : route($epRoute, ['category' => $category, 'id' => $e['id']]) . '?source=' . $src . '&m=' . urlencode($id) }}" class="cy-ep">
                                     <span>
                                         <span class="ep-t">{{ $e['label'] }}</span>
                                         @if($e['date'])<br><span class="ep-d">{{ $e['date'] }}</span>@endif

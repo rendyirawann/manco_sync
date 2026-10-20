@@ -35,7 +35,12 @@ class SankaClient
      * dan bisa berakhir 404. Karena itu saat hulu gagal, callback mengembalikan
      * salinan lama (bila ada); null hanya bila memang belum pernah ada data.
      */
-    public function json(string $path, int $ttl = 300): ?array
+    /**
+     * @param int $ttl   detik salinan dianggap segar
+     * @param int $stale detik salinan lama masih boleh dipakai (dan disegarkan
+     *                   di belakang) — termasuk saat hulu error atau memblokir.
+     */
+    public function json(string $path, int $ttl = 300, int $stale = 86400): ?array
     {
         $key = 'sanka:' . md5($path);
         $failKey = 'sanka-fail:' . md5($path);
@@ -47,7 +52,7 @@ class SankaClient
             return null;
         }
 
-        return Cache::flexible($key, [$ttl, 86400], function () use ($path, $key, $failKey) {
+        return Cache::flexible($key, [$ttl, max($ttl, $stale)], function () use ($path, $key, $failKey) {
             $body = $this->fetch($path);
             if ($body === null && !Cache::has($key)) {
                 Cache::put($failKey, 1, 600);
@@ -56,9 +61,41 @@ class SankaClient
         });
     }
 
+    /**
+     * Uji langsung ke hulu tanpa cache (dipakai pemeriksa kesehatan sumber).
+     * Bila berhasil, salinan cache diperbarui dan tanda gagal 10 menit dihapus —
+     * jadi sumber yang pulih langsung tampil lagi, tidak menunggu tanda kedaluwarsa.
+     */
+    public function probe(string $path, int $ttl = 300): ?array
+    {
+        $body = $this->fetch($path);
+        if ($body !== null) {
+            $key = 'sanka:' . md5($path);
+            Cache::put($key, $body, 86400);
+            Cache::put("illuminate:cache:flexible:created:{$key}", \Illuminate\Support\Carbon::now()->getTimestamp(), 86400);
+            Cache::forget('sanka-fail:' . md5($path));
+        }
+        return $body;
+    }
+
+    /** Hapus tanda gagal untuk satu path (sumber dianggap pulih). */
+    public function clearFailure(string $path): void
+    {
+        Cache::forget('sanka-fail:' . md5($path));
+    }
+
     /** One upstream GET → decoded body, or null when the upstream failed. */
+    /** Tanda "Sanka sedang memblokir server ini": selama ada, tidak ada permintaan ke Sanka. */
+    protected const BANNED_KEY = 'sanka-banned';
+
     protected function fetch(string $path): ?array
     {
+        $isSanka = !str_starts_with($path, 'http');
+        // Saat diblokir, jangan terus mengetuk: tiap permintaan yang ditolak hanya
+        // memperkuat alasan blokir. Halaman yang sudah ter-cache tetap tampil.
+        if ($isSanka && Cache::has(self::BANNED_KEY)) {
+            return null;
+        }
         try {
             $res = Http::withHeaders([
                 'User-Agent' => $this->ua,
@@ -76,6 +113,16 @@ class SankaClient
               // Path absolut dipakai sumber yang dilayani API lain (mis. anime-api
               // lokal untuk Oploverz+); selebihnya relatif terhadap basis Sanka.
               ->get(str_starts_with($path, 'http') ? $path : $this->base . $path);
+
+            if ($isSanka && $res->status() === 403
+                && str_contains(strtolower((string) ($res->json('message') ?? '')), 'banned')) {
+                if (!Cache::has(self::BANNED_KEY)) {
+                    logger()->error('Sanka API memblokir server ini (IP ' . ($res->json('ip') ?? '?') . '); permintaan ke Sanka dijeda 1 jam. '
+                        . 'Unban: hubungi pengelola Sanka (lihat pesan di respons).');
+                }
+                Cache::put(self::BANNED_KEY, 1, 3600);
+                return null;
+            }
 
             if (!$res->successful()) {
                 return null;

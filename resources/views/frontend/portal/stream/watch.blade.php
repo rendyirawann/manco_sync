@@ -18,6 +18,7 @@
             @endif
         </div>
 
+        @php $sd = $category === 'shortdrama'; ob_start(); @endphp
         <div class="cy-reader-bar cy-watch-bar">
             {{-- Judul seri hanya ditambahkan bila judul episode belum memuatnya (HentaiHaven, Otakudesu sudah). --}}
             <h1>{{ ($nav['seriesTitle'] && !\Illuminate\Support\Str::contains(mb_strtolower($ep['title']), mb_strtolower($nav['seriesTitle']))) ? $nav['seriesTitle'] . ' — ' : '' }}{{ $ep['title'] }}</h1>
@@ -34,8 +35,21 @@
                 @if($ep['next'])<a class="cy-btn" href="{{ $epUrl($ep['next']) }}">Next <i class="fas fa-forward"></i></a>@endif
             </div>
         </div>
+        @php $titleBar = ob_get_clean(); @endphp
 
-        @include('frontend.portal.partials.player', ['streamUrl' => $ep['defaultUrl'], 'streamType' => $ep['defaultType']])
+        @if($sd)
+            {{-- Drama pendek vertikal 9:16: pemutar tegak di kiri setinggi layar, judul/server/episode
+                 di kanan (desktop); bertumpuk di layar sempit. --}}
+            <div class="sd-layout">
+                <div class="sd-left">
+                    @include('frontend.portal.partials.player', ['streamUrl' => $ep['defaultUrl'], 'streamType' => $ep['defaultType']])
+                </div>
+                <div class="sd-right">
+                    {!! $titleBar !!}
+        @else
+            {!! $titleBar !!}
+            @include('frontend.portal.partials.player', ['streamUrl' => $ep['defaultUrl'], 'streamType' => $ep['defaultType']])
+        @endif
 
         @if(count($ep['servers']))
             <div class="cy-servers">
@@ -65,6 +79,11 @@
             </div>
         @endif
 
+        @if($sd)
+                </div>
+            </div>
+        @endif
+
         @if(count($ep['downloads']))
             <div class="cy-downloads">
                 <h2 class="cy-section-title"><i class="fas fa-download"></i> Unduh</h2>
@@ -83,6 +102,17 @@
 @push('scripts')
 <script>
 (function(){
+    @if($category === 'shortdrama' && $ep['next'])
+    // Drama pendek: episode berikutnya otomatis diputar setelah episode ini selesai.
+    const vid = document.getElementById('cy-video');
+    if (vid) vid.addEventListener('ended', () => { window.location.href = @json($epUrl($ep['next'])) + '&auto=1'; });
+    @endif
+    @if($category === 'shortdrama')
+    if (new URLSearchParams(location.search).get('auto') === '1') {
+        const v = document.getElementById('cy-video');
+        v && v.addEventListener('loadedmetadata', () => { const p = v.play(); p && p.catch(() => {}); }, { once: true });
+    }
+    @endif
     const cur = document.querySelector('.cy-chgrid .cy-chbtn.active');
     if (cur) cur.parentNode.scrollTop = cur.offsetTop - cur.parentNode.offsetTop - 60;
     const tpl = @json(route('portal.stream.server', ['category' => $category, 'id' => '__SID__']) . '?source=' . $src);

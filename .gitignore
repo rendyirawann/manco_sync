@@ -28,3 +28,6 @@ rr
 
 # backup lokal & sementara
 *.bak-*
+
+# Salinan cadangan dari migrasi server (bisa berisi rahasia, mis. .env.sebelum-pindah)
+*.sebelum-pindah

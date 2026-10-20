@@ -61,11 +61,55 @@
             @if(count($playable) > 1)
                 <div class="cy-servers">
                     <h2 class="cy-section-title"><i class="fas fa-server"></i> Server / Kualitas</h2>
-                    @foreach($playable as $i => $s)
-                        <a class="server-btn {{ $i == $sel ? 'active' : '' }}" href="{{ route('portal.film.watch', ['type' => $type, 'id' => $id]) }}?{{ http_build_query(array_filter(['season' => $season, 'episode' => $episode]) + ['s' => $i]) }}">
-                            {!! !empty($s['embed']) ? '<i class="fas fa-display"></i> ' : '' !!}{{ ($s['hls'] ?? false) ? '● ' : '' }}{{ $s['name'] ?? ('Server ' . ($i + 1)) }} {{ $s['quality'] ?? '' }}
-                        </a>
-                    @endforeach
+                    @php
+                        // Label rapi: "CastleTV [English] | 1080p" → penyedia · audio · kualitas.
+                        // Penyedia sama + audio sama dari host berbeda diberi nomor (#1, #2).
+                        $srvUrl = fn ($i) => route('portal.film.watch', ['type' => $type, 'id' => $id]) . '?' . http_build_query(array_filter(['season' => $season, 'episode' => $episode]) + ['s' => $i]);
+                        $groups = ['direct' => [], 'embed' => []];
+                        $seen = [];
+                        foreach ($playable as $i => $sv) {
+                            $raw = (string) ($sv['name'] ?? ('Server ' . ($i + 1)));
+                            preg_match('/\[([^\]]+)\]/', $raw, $lm);
+                            $prov = trim(preg_replace('/\s*\[[^\]]*\]|\s*\(sub indo\)|\|.*$|\s+-\s+\d{3,4}p.*$|\s+\d{3,4}p$/i', '', $raw)) ?: ('Server ' . ($i + 1));
+                            $q = $sv['quality'] ?? (preg_match('/(\d{3,4}p|auto)/i', $raw, $qm) ? $qm[1] : null);
+                            $lang = $lm[1] ?? null;
+                            $k = strtolower($prov . '|' . $lang . '|' . $q);
+                            $seen[$k] = ($seen[$k] ?? 0) + 1;
+                            $groups[!empty($sv['embed']) ? 'embed' : 'direct'][] = [
+                                'i' => $i, 'prov' => $prov, 'lang' => $lang, 'q' => $q, 'n' => $seen[$k],
+                                'sub' => !empty($sv['lang']) && $sv['lang'] === 'id', 'k' => $k,
+                            ];
+                        }
+                        foreach ($groups as &$g) { foreach ($g as &$r) { $r['multi'] = $seen[$r['k']] > 1; } } unset($g, $r);
+                    @endphp
+
+                    @if(count($groups['direct']))
+                        <div class="cy-srv-group">
+                            <div class="cy-srv-head"><i class="fas fa-bolt"></i> Video langsung <span>pemutar kami · kualitas otomatis · subtitle Indonesia</span></div>
+                            <div class="cy-srv-list">
+                                @foreach($groups['direct'] as $r)
+                                    <a class="cy-srv {{ $r['i'] == $sel ? 'active' : '' }}" href="{{ $srvUrl($r['i']) }}">
+                                        <span class="cy-srv-name">{{ $r['prov'] }}@if($r['multi']) <small>#{{ $r['n'] }}</small>@endif</span>
+                                        @if($r['lang'])<span class="cy-srv-tag">{{ $r['lang'] }}</span>@endif
+                                        @if($r['q'])<span class="cy-srv-q">{{ $r['q'] }}</span>@endif
+                                    </a>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+                    @if(count($groups['embed']))
+                        <div class="cy-srv-group">
+                            <div class="cy-srv-head"><i class="fas fa-display"></i> Pemutar embed <span>dari situs lain · bisa ada iklan</span></div>
+                            <div class="cy-srv-list">
+                                @foreach($groups['embed'] as $r)
+                                    <a class="cy-srv {{ $r['i'] == $sel ? 'active' : '' }}" href="{{ $srvUrl($r['i']) }}">
+                                        <span class="cy-srv-name">{{ $r['prov'] }}</span>
+                                        @if($r['sub'])<span class="cy-srv-tag is-id">Sub Indo</span>@endif
+                                    </a>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
                 </div>
             @endif
         @elseif(count($downloads))

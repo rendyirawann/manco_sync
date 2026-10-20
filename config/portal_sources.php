@@ -22,9 +22,29 @@ return [
                 'search' => '/anime/search/{q}', 'detail' => '/anime/anime/{id}',
                 'episode' => '/anime/episode/{id}', 'server' => '/anime/server/{id}',
             ],
+            // Kuramanime lewat anime-api LOKAL (scraper sendiri, bukan Sanka). Id majemuk
+            // digabung "~": judul "5149~cheng-ye-xiao-he", episode "5149~cheng-ye-xiao-he~13".
+            // Stream = iframe MEGA/FileMoon/DoodStream; mp4 Kuramadrive hanya jadi tautan unduh
+            // (host kdrive membalas <video> dari origin lain dengan klip promo 10 detik).
+            'kuramanime' => [
+                'label' => 'Kuramanime', 'icon' => 'fa-fire-flame-curved',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => [
+                    'Ongoing'   => '/kuramanime/list?type=ongoing&page={p}',
+                    'Terbaru'   => '/kuramanime/list?type=updated&page={p}',
+                    'Completed' => '/kuramanime/list?type=completed&page={p}',
+                    'Populer'   => '/kuramanime/list?type=popular&page={p}',
+                    'Movie'     => '/kuramanime/list?type=movie&page={p}',
+                ],
+                'search' => '/kuramanime/search?q={q}', 'detail' => '/kuramanime/detail/{id}',
+                'episode' => '/kuramanime/watch/{id}',
+            ],
             'samehadaku' => [
                 'label' => 'Samehadaku', 'icon' => 'fa-layer-group',
                 'lists' => ['Ongoing' => '/anime/samehadaku/ongoing?page={p}', 'Completed' => '/anime/samehadaku/completed?page={p}', 'Populer' => '/anime/samehadaku/popular?page={p}'],
+                // Hulu rusak (Sanka 500, situs resmi 521 per 12 Okt 2026): daftar dialihkan ke
+                // Kuramanime oleh portal:health; id judul BERBEDA → detail tidak dialihkan.
+                'fallback' => 'kuramanime', 'fallback_ids' => false,
                 'search' => '/anime/samehadaku/search?q={q}', 'detail' => '/anime/samehadaku/anime/{id}',
                 'episode' => '/anime/samehadaku/episode/{id}', 'server' => '/anime/samehadaku/server/{id}',
             ],
@@ -73,6 +93,9 @@ return [
                 'lists' => ['Terbaru' => '/anime/anoboy/home?page={p}', 'A-Z' => '/anime/anoboy/az-list?page={p}'],
                 'search' => '/anime/anoboy/search/{q}', 'detail' => '/anime/anoboy/anime/{id}',
                 'episode' => '/anime/anoboy/episode/{id}',
+                // Tab "Terbaru" berisi EPISODE ("…-episode-2-subtitle-indonesia"); id judulnya
+                // didapat dengan membuang akhiran episode (detail judul "kanojo-no-tomodachi" sehat).
+                'detail_strip' => '/-episode-.*$/',
             ],
             'stream' => [
                 'label' => 'Anime Indo', 'icon' => 'fa-clapperboard',
@@ -156,6 +179,46 @@ return [
                 'search' => '/movie/api/dramabox/search?q={q}', 'detail' => '/movie/api/dramabox/detail?bookId={id}',
                 'episode' => '/movie/api/dramabox/stream?bookId={id}&episode=1',
                 'disabled' => true, // /movie/api/* 403 untuk IP box ini
+            ],
+        ],
+    ],
+
+    // Drama pendek vertikal (9:16) ala iklan Instagram — "Video AI". Dilayani scraper
+    // anime-api lokal dari situs web resmi ReelShort & DramaBox (lokal Indonesia), stream HLS
+    // langsung ber-CORS. ReelShort: semua episode; DramaBox: hanya episode gratis di web.
+    'shortdrama' => [
+        'label' => 'Video AI', 'icon' => 'fa-mobile-screen', 'kind' => 'video',
+        'episode_order' => 'asc', // drama pendek: urut dari episode 1 (anime dkk. terbaru dulu)
+        'sources' => [
+            'reelshort' => [
+                'label' => 'ReelShort', 'icon' => 'fa-mobile-screen',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => [
+                    'Rilis Baru' => '/reelshort/list?shelf=51002665&page={p}',
+                    'Ranking' => '/reelshort/list?shelf=51002666&page={p}',
+                    'Sulih Suara' => '/reelshort/list?shelf=51002667&page={p}',
+                    'Romantis' => '/reelshort/list?shelf=51002668&page={p}',
+                ],
+                'search' => '/reelshort/search?q={q}', 'detail' => '/reelshort/detail/{id}',
+                'episode' => '/reelshort/episode/{id}',
+            ],
+            'dramabox' => [
+                'label' => 'DramaBox', 'icon' => 'fa-film',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => ['Terbaru' => '/dramabox/list?page={p}'],
+                'search' => '/dramabox/search?q={q}', 'detail' => '/dramabox/detail/{id}',
+                'episode' => '/dramabox/episode/{id}',
+            ],
+            // GoodShort (situs web resmi, katalog Indonesia ±1.200 judul): hanya episode gratis
+            // (biasanya ±10 pertama) yang membawa URL HLS. ShortMax (segmen HLS terenkripsi
+            // khusus, tanpa CORS) & NetShort (API player terenkripsi RSA/AES + login tamu)
+            // tidak bisa diputar di pemutar biasa -> tidak dipasang.
+            'goodshort' => [
+                'label' => 'GoodShort', 'icon' => 'fa-play',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => ['Terbaru' => '/goodshort/list?page={p}'],
+                'search' => '/goodshort/search?q={q}', 'detail' => '/goodshort/detail/{id}',
+                'episode' => '/goodshort/episode/{id}',
             ],
         ],
     ],
@@ -247,6 +310,28 @@ return [
                 // gejalanya membingungkan: dua navigasi di halaman yang sama, satu
                 // jalan satu tidak.
                 'chapter_id' => 'manga_prefixed',
+                // Bila hulu Sanka rusak, portal:health mengalihkan daftar & detail ke Kiryuu+
+                // (situs sama → slug judul sama). Otomatis kembali bila Sanka pulih.
+                'fallback' => 'kiryuuplus',
+            ],
+            // Kiryuu+ : scraper LOKAL anime-api langsung ke v7.kiryuu.to (Sanka kiryuu
+            // /latest & /popular kosong, detail kosong per Okt 2026). Id bab
+            // "{manga}-chapter-{n}.{postId}" (mis. "black-clover-chapter-392.756898").
+            // Sampul di v7.kiryuu.to menolak Referer asing (403) -> proxy_poster;
+            // halaman bab (yuucdn.com, jsdelivr) tanpa hotlink-protection.
+            'kiryuuplus' => [
+                'label' => 'Kiryuu+', 'icon' => 'fa-bolt',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => [
+                    'Terbaru' => '/kiryuu/list?order=updated&page={p}',
+                    'Populer' => '/kiryuu/list?order=popular&page={p}',
+                    'Rating'  => '/kiryuu/list?order=rating&page={p}',
+                    'Manga'   => '/kiryuu/list?order=updated&type=manga&page={p}',
+                    'Manhwa'  => '/kiryuu/list?order=updated&type=manhwa&page={p}',
+                    'Manhua'  => '/kiryuu/list?order=updated&type=manhua&page={p}',
+                ],
+                'search' => '/kiryuu/search?q={q}', 'detail' => '/kiryuu/detail/{id}', 'chapter' => '/kiryuu/chapter/{id}',
+                'proxy_poster' => true,
             ],
             'maid' => [
                 'label' => 'Maid', 'icon' => 'fa-broom',
@@ -321,9 +406,36 @@ return [
     // Novel = TEXT content (kind 'text' → StreamController renders the text reader).
     // Only SakuraNovel: full flow verified (home/detail/read; chapter text at data.content).
     // Generic /novel/* is unusable (no read-content endpoint + JSON-rounded 64-bit novelId).
+    // Okt 2026: SakuraNovel rusak di hulu (sakuranovel.id 403 ke scraper Sanka → home/search/
+    // detail kosong). Novel Ringan & WbNovel dilayani scraper di anime-api lokal :8103
+    // (/novel-novelringan/*, /novel-wbnovel/*; slug bab WbNovel "novel~chapter-N").
     'novel' => [
         'label' => 'Novel', 'icon' => 'fa-feather-pointed', 'kind' => 'text',
         'sources' => [
+            'novelringan' => [
+                'label' => 'Novel Ringan', 'icon' => 'fa-feather-pointed',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => [
+                    'Update' => '/novel-novelringan/list?order=update&page={p}',
+                    'Populer' => '/novel-novelringan/list?order=popular&page={p}',
+                    'Baru' => '/novel-novelringan/list?order=latest&page={p}',
+                    'A-Z' => '/novel-novelringan/list?order=title&page={p}',
+                ],
+                'search' => '/novel-novelringan/search?q={q}', 'detail' => '/novel-novelringan/detail/{id}',
+                'chapter' => '/novel-novelringan/read/{id}',
+            ],
+            'wbnovel' => [
+                'label' => 'WbNovel', 'icon' => 'fa-book',
+                'base' => env('MANCO_ANIME_API_BASE', 'http://127.0.0.1:8103'),
+                'lists' => [
+                    'Terbaru' => '/novel-wbnovel/list?order=latest&page={p}',
+                    'Populer' => '/novel-wbnovel/list?order=views&page={p}',
+                    'Trending' => '/novel-wbnovel/list?order=trending&page={p}',
+                    'A-Z' => '/novel-wbnovel/list?order=alphabet&page={p}',
+                ],
+                'search' => '/novel-wbnovel/search?q={q}', 'detail' => '/novel-wbnovel/detail/{id}',
+                'chapter' => '/novel-wbnovel/read/{id}',
+            ],
             'sakuranovel' => [
                 'label' => 'SakuraNovel', 'icon' => 'fa-feather-pointed',
                 'lists' => ['Terbaru' => '/novel/sakuranovel/home?page={p}', 'A-Z' => '/novel/sakuranovel/daftar-novel'],

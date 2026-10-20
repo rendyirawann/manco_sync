@@ -27,7 +27,8 @@ class PortalController extends Controller
             ['anime',   'otakudesu', '/anime/ongoing-anime',     'Anime Ongoing',   'fa-tv'],
             ['donghua', 'anichin',   '/anime/donghua/ongoing/1', 'Donghua Terbaru', 'fa-dragon'],
             ['comic',   'komikindo', '/comic/komikindo/latest/1', 'Komik Terbaru',   'fa-book-open'],
-            ['novel',   'sakuranovel', '/novel/sakuranovel/home?page=1', 'Novel Terbaru', 'fa-feather-pointed'],
+            // SakuraNovel kosong di hulu sejak Okt 2026 → baris beranda memakai Novel Ringan (anime-api lokal).
+            ['novel',   'novelringan', '/novel-novelringan/list?order=update&page=1', 'Novel Terbaru', 'fa-feather-pointed'],
         ] as [$cat, $src, $path, $label, $icon]) {
             $items = $this->client->list($cat, $src, $path);
             if (!$items) {
@@ -62,6 +63,7 @@ class PortalController extends Controller
             ['label' => 'Manga & Manhwa',  'icon' => 'fa-book-open',   'url' => route('portal.stream.index', 'comic')],
             ['label' => 'Novel',           'icon' => 'fa-feather-pointed', 'url' => route('portal.stream.index', 'novel')],
             ['label' => 'Drama',           'icon' => 'fa-clapperboard','url' => route('portal.stream.index', 'drama')],
+            ['label' => 'Video AI',        'icon' => 'fa-mobile-screen', 'url' => route('portal.stream.index', 'shortdrama')],
             ['label' => 'Film & Movie',    'icon' => 'fa-film',        'url' => route('portal.film.index')],
             ['label' => 'Live TV',         'icon' => 'fa-tower-broadcast', 'url' => route('portal.tv.index')],
         ];
@@ -92,6 +94,11 @@ class PortalController extends Controller
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
             abort(403);
         }
+        // Cache disk 7 hari: halaman yang pernah dibuka siapa pun langsung
+        // dilayani dari disk, tanpa menunggu sumber (yang lambat saat dingin).
+        if ($cached = $this->imageCacheGet($url)) {
+            return $cached;
+        }
         try {
             $headers = [
                 'User-Agent' => (string) config('services.manco.scraper_ua'),
@@ -109,23 +116,186 @@ class PortalController extends Controller
                 }
             }
 
-            $res = Http::withHeaders($headers)->timeout(12)->get($url);
+            $res = $this->fetchImage($url, $headers);
 
             // Self-healing fallback: if blocked by hotlink-protection, retry with bacakomik referer
             if (($res->status() === 403 || $res->status() === 401) && (!isset($headers['Referer']) || $headers['Referer'] !== 'https://bacakomik.my/')) {
                 $headers['Referer'] = 'https://bacakomik.my/';
-                $res = Http::withHeaders($headers)->timeout(12)->get($url);
+                $res = $this->fetchImage($url, $headers);
             }
 
             if (!$res->successful()) {
                 abort(404);
             }
-            return response($res->body(), 200)
-                ->header('Content-Type', $res->header('Content-Type') ?: 'image/jpeg')
-                ->header('Cache-Control', 'public, max-age=604800');
+
+            [$body, $type] = $this->shrinkImage($res->body(), $res->header('Content-Type') ?: 'image/jpeg');
+            $this->imageCachePut($url, $body, $type);
+
+            return response($body, 200)
+                ->header('Content-Type', $type)
+                ->header('Cache-Control', 'public, max-age=604800')
+                ->header('X-Img-Cache', 'MISS');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            throw $e;
         } catch (\Throwable $e) {
             abort(404);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Cache + kompresi gambar proxy
+    // ------------------------------------------------------------------
+
+    /**
+     * Ambil gambar dari sumber; bila host komiku tidak terjangkau, coba berkas
+     * yang sama di host saudaranya. imageN.komiku.to memakai path yang sama,
+     * dan sebagian host (jaringan 103.92.215.x) tidak bisa dihubungi dari
+     * server ini sehingga panel menggantung lalu gagal.
+     */
+    private function fetchImage(string $url, array $headers)
+    {
+        $candidates = [$url];
+        $host = (string) parse_url($url, PHP_URL_HOST);
+        if (preg_match('/^image\d+\.komiku\.to$/i', $host)) {
+            // image2 dulu: satu-satunya host komiku yang terjangkau dari server ini
+            // (Okt 2026). Host asli tetap dicoba sebagai cadangan.
+            $candidates = [];
+            foreach (['image2', null, 'image1', 'image3', 'image4'] as $alt) {
+                $candidates[] = $alt === null ? $url
+                    : preg_replace('#//image\d+\.komiku\.to/#i', '//' . $alt . '.komiku.to/', $url, 1);
+            }
+            $candidates = array_values(array_unique($candidates));
+        }
+
+        $res = null;
+        $last = count($candidates) - 1;
+        foreach ($candidates as $i => $try) {
+            try {
+                // Batas sambung singkat bila ada cadangan, supaya cepat pindah host.
+                $res = Http::withHeaders($headers)->connectTimeout($last > 0 ? 4 : 8)->timeout(12)->get($try);
+                if ($res->successful()) {
+                    return $res;
+                }
+            } catch (\Illuminate\Http\Client\ConnectionException $e) {
+                if ($i === $last) {
+                    throw $e;
+                }
+            }
+        }
+
+        return $res;
+    }
+
+    /** Masa simpan cache gambar (detik). Pembersihan: manco-imgcache-clean.timer. */
+    private const IMG_CACHE_TTL = 7 * 86400;
+
+    /** Lebar maksimum halaman; layar ponsel/laptop tidak butuh lebih. */
+    private const IMG_MAX_WIDTH = 1000;
+
+    private function imageCachePath(string $url): string
+    {
+        $key = sha1($url);
+
+        return storage_path('app/imgcache/' . substr($key, 0, 2) . '/' . $key);
+    }
+
+    private function imageCacheGet(string $url)
+    {
+        $path = $this->imageCachePath($url);
+        $meta = $path . '.type';
+
+        if (!is_file($path) || !is_file($meta) || filemtime($path) < time() - self::IMG_CACHE_TTL) {
+            return null;
+        }
+
+        return response()->file($path, [
+            'Content-Type'  => trim((string) @file_get_contents($meta)) ?: 'image/jpeg',
+            'Cache-Control' => 'public, max-age=604800',
+            'X-Img-Cache'   => 'HIT',
+        ]);
+    }
+
+    private function imageCachePut(string $url, string $body, string $type): void
+    {
+        try {
+            $path = $this->imageCachePath($url);
+            @mkdir(dirname($path), 0775, true);
+            // Tulis ke berkas sementara lalu rename: pembaca lain tidak pernah
+            // mendapat berkas setengah jadi.
+            $tmp = $path . '.' . getmypid() . '.tmp';
+            if (@file_put_contents($tmp, $body) !== false) {
+                @file_put_contents($path . '.type', $type);
+                @rename($tmp, $path);
+            }
+        } catch (\Throwable $e) {
+            // Cache hanya percepatan; gagal tulis tidak boleh menggagalkan gambar.
+        }
+    }
+
+    /**
+     * Perkecil halaman besar: JPEG progresif kualitas 72 (PNG: WebP 75),
+     * lebar maks 1000 px. Hanya dipakai bila hasilnya memang lebih kecil.
+     * GIF dibiarkan (bisa animasi); gambar sangat tinggi dilewati.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function shrinkImage(string $body, string $type): array
+    {
+        $type = strtolower(trim(explode(';', $type)[0]));
+
+        if (strlen($body) < 120 * 1024
+            || !in_array($type, ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'], true)
+            || !function_exists('imagewebp')) {
+            return [$body, $type];
+        }
+
+        try {
+            $size = @getimagesizefromstring($body);
+            if (!$size || $size[0] < 1 || $size[1] < 1) {
+                return [$body, $type];
+            }
+            [$w, $h] = $size;
+            $nw = min($w, self::IMG_MAX_WIDTH);
+            $nh = (int) round($h * $nw / $w);
+            // Batas WebP dan batas memori (sekitar 4 byte per piksel).
+            if (($type === 'image/png' && $nh > 16383) || $nh > 65000 || ($w * $h) > 40_000_000) {
+                return [$body, $type];
+            }
+
+            $src = @imagecreatefromstring($body);
+            if (!$src) {
+                return [$body, $type];
+            }
+            $img = $nw < $w ? imagescale($src, $nw, $nh, IMG_BICUBIC) : $src;
+            if ($img !== $src) {
+                imagedestroy($src);
+            }
+            if (!$img) {
+                return [$body, $type];
+            }
+
+            // JPEG progresif: ~20x lebih ringan CPU daripada WebP (12 ms vs 240 ms
+            // per halaman), penting saat 20+ halaman dikonversi bersamaan di 4 core.
+            // PNG tetap WebP karena bisa transparan.
+            $asWebp = $type === 'image/png';
+            ob_start();
+            if ($asWebp) {
+                $ok = imagewebp($img, null, 75);
+            } else {
+                imageinterlace($img, true);
+                $ok = imagejpeg($img, null, 72);
+            }
+            $out = (string) ob_get_clean();
+            imagedestroy($img);
+
+            if ($ok && $out !== '' && strlen($out) < strlen($body)) {
+                return [$out, $asWebp ? 'image/webp' : 'image/jpeg'];
+            }
+        } catch (\Throwable $e) {
+            // Gagal konversi: kirim gambar asli.
+        }
+
+        return [$body, $type];
     }
 
     /** SSRF-safe URL check → decoded url or abort. */

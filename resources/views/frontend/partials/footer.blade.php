@@ -26,6 +26,7 @@
                         <li><a href="{{ route('portal.stream.index', 'anime') }}">Anime (Jepang)</a></li>
                         <li><a href="{{ route('portal.stream.index', 'donghua') }}">Donghua (China)</a></li>
                         <li><a href="{{ route('portal.stream.index', 'drama') }}">Drama</a></li>
+                        <li><a href="{{ route('portal.stream.index', 'shortdrama') }}">Video AI (Drama Pendek)</a></li>
                         <li><a href="{{ route('portal.film.index') }}">Film &amp; Movie</a></li>
                     </ul>
                 </div>

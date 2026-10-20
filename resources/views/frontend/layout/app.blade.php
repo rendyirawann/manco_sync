@@ -46,5 +46,6 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="{{ asset('js/frontend/app.js') }}"></script>
     @stack('scripts')
+    @include('frontend.partials.donate-modal')
 </body>
 </html>

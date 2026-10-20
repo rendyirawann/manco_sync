@@ -57,6 +57,11 @@ return [
     */
     'manco' => [
         // Tautan sosial pemilik (navbar atas + footer). Kosong = ikon disembunyikan.
+        // Popup dukungan (QR Saweria / Sociabuzz). Kosong = kartunya tidak tampil.
+        'donate' => [
+            'saweria'   => env('MANCO_DONATE_SAWERIA', ''),
+            'sociabuzz' => env('MANCO_DONATE_SOCIABUZZ', ''),
+        ],
         'social' => [
             'linkedin'  => env('MANCO_SOCIAL_LINKEDIN', ''),
             'github'    => env('MANCO_SOCIAL_GITHUB', ''),
