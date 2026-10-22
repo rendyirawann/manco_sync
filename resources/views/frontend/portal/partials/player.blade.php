@@ -16,6 +16,11 @@
    berbeda, browser bisa melukis latar iframe putih saat embed menggambar ulang. */
 .cy-player,.cy-player iframe{background:#000;color-scheme:dark}
 body.cy-cinema{overflow:hidden;background:#000}
+.cy-fail{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.82);color:#fff;text-align:center;padding:16px}
+.cy-fail[hidden]{display:none}
+.cy-fail-title{font-weight:700;font-size:1rem;margin-bottom:.4rem}
+.cy-fail-sub{font-size:.85rem;opacity:.8;margin-bottom:.8rem}
+.cy-fail-cancel{padding:.35rem 1rem;border-radius:999px;border:1px solid rgba(255,255,255,.3);background:transparent;color:#fff;cursor:pointer}
 /* Pemutar lebar (halaman film): lebih lebar dari kolom konten, tapi selalu muat
    utuh di bawah header — lebar dibatasi oleh tinggi jendela (16:9). --cy-avail-h
    diisi skrip dari tinggi jendela dikurangi header. */
@@ -42,6 +47,13 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
                 allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                 referrerpolicy="no-referrer"></iframe>
     @else
+        <div class="cy-fail" id="cy-fail" hidden>
+            <div class="cy-fail-box">
+                <div class="cy-fail-title"><i class="fas fa-triangle-exclamation"></i> Server ini tidak bisa diputar</div>
+                <div class="cy-fail-sub" id="cy-fail-sub"></div>
+                <button type="button" class="cy-fail-cancel" id="cy-fail-cancel">Batal</button>
+            </div>
+        </div>
         <video id="cy-video" playsinline preload="auto" referrerpolicy="no-referrer">
             @foreach(($subtitles ?? []) as $i => $st)
                 <track kind="captions" label="{{ $st['label'] }}" srclang="{{ $st['lang'] }}" src="{{ $st['src'] }}" @if($i === 0) default @endif>
@@ -167,6 +179,32 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
     function proxied(u){ return HLS_PROXY + '?u=' + encodeURIComponent(btoa(u)); }
     function loadScript(s, cb){ const e=document.createElement('script'); e.src=s; e.onload=cb; e.onerror=cb; document.head.appendChild(e); }
 
+    // ---------- pindah otomatis bila sumber gagal (00:00, tidak bisa diputar) ----------
+    const NEXT_AUTO = @json($nextAuto ?? null);
+    let failed = false, failTimer = null;
+    function sourceFailed(reason){
+        if (failed) return;
+        failed = true;
+        clearTimeout(watchdog);
+        const box = document.getElementById('cy-fail'), sub = document.getElementById('cy-fail-sub');
+        if (!box) return;
+        box.hidden = false;
+        if (!NEXT_AUTO) { sub.textContent = reason + ' Semua server sudah dicoba — silakan pilih server di bawah.'; document.getElementById('cy-fail-cancel').hidden = true; return; }
+        let n = 3;
+        const tick = function(){ sub.textContent = reason + ' Pindah ke server berikutnya dalam ' + n + ' detik…'; if (n-- <= 0) { location.href = NEXT_AUTO; return; } failTimer = setTimeout(tick, 1000); };
+        tick();
+        document.getElementById('cy-fail-cancel').onclick = function(){ clearTimeout(failTimer); box.hidden = true; };
+    }
+    // Belum ada durasi setelah 20 dtk = sumber menggantung (tampil 00:00).
+    const watchdog = setTimeout(function(){ if (video && video.readyState < 1) sourceFailed('Video tidak termuat.'); }, 20000);
+    if (video) {
+        video.addEventListener('loadedmetadata', function(){ clearTimeout(watchdog); }, { once:true });
+        video.addEventListener('error', function(){
+            // HLS punya cadangan proxy sendiri; error elemen untuk MP4 langsung = gagal.
+            if (!isHls) sourceFailed(video.error && video.error.code === 4 ? 'Format video tidak didukung browser ini.' : 'Video gagal dimuat.');
+        });
+    }
+
     let plyr = null;
     function initPlyr(){
         if (plyr || !window.Plyr) return;
@@ -212,6 +250,7 @@ body.cy-cinema .cy-cinema-exit{display:inline-flex;align-items:center;gap:6px}
                 startHls(true); return;
             }
             fmtEl.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Stream gagal — coba server lain';
+            sourceFailed('Stream gagal dimuat.');
         });
     }
 

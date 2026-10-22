@@ -1,7 +1,17 @@
 @extends('frontend.layout.app')
 @section('title', ($data['title'] ?? 'Nonton'))
 
-@php $sel = (int) request('s', 0); $current = $playable[$sel] ?? ($playable[0] ?? null); @endphp
+@php
+    $sel = (int) request('s', 0); $current = $playable[$sel] ?? ($playable[0] ?? null);
+    // Pindah otomatis ke server berikutnya bila pemutar langsung gagal memuat.
+    // "auto" menghitung lompatan agar berhenti setelah semua server dicoba sekali.
+    $auto = (int) request('auto', 0);
+    $nextAuto = null;
+    if (count($playable) > 1 && $auto < count($playable) - 1) {
+        $nextAuto = route('portal.film.watch', ['type' => $type, 'id' => $id]) . '?' . http_build_query(
+            array_filter(['season' => $season ?? null, 'episode' => $episode ?? null]) + ['s' => ($sel + 1) % count($playable), 'auto' => $auto + 1]);
+    }
+@endphp
 
 @section('content')
 <div class="portal-page">
@@ -57,7 +67,7 @@
             @if(!empty($current['embed']))
                 <p class="portal-sub" style="margin:0 0 .8rem">Server pihak ketiga — kalau tidak jalan atau muncul iklan, pilih server lain di bawah.</p>
             @endif
-            @include('frontend.portal.partials.player', ['streamUrl' => $current['url'], 'streamType' => !empty($current['embed']) ? 'embed' : 'video', 'subtitles' => $subtitles ?? [], 'wide' => true])
+            @include('frontend.portal.partials.player', ['streamUrl' => $current['url'], 'streamType' => !empty($current['embed']) ? 'embed' : 'video', 'subtitles' => $subtitles ?? [], 'wide' => true, 'nextAuto' => $nextAuto])
             @if(count($playable) > 1)
                 <div class="cy-servers">
                     <h2 class="cy-section-title"><i class="fas fa-server"></i> Server / Kualitas</h2>
